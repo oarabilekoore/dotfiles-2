@@ -48,7 +48,7 @@ The launcher delegates OCR to the Hydrogen backend:
 - Use the image action **OCR to Markdown** in Files mode to recognise an image file.
 - The result is copied as plain-text Markdown and can be pasted into the previously focused window.
 
-The current Hydrogen OCR worker uses RapidOCR. See the [Hydrogen repository](https://github.com/oarabilekoore/hydrogen) for its runtime and command-line setup.
+Hydrogen now provides three on-demand OCR engines: Pix2Text for mixed text and mathematical formulas (with LaTeX output), TrOCR Small Handwritten for handwritten English lines, and RapidOCR as a legacy fallback. The default launcher action uses Pix2Text. To run handwriting recognition explicitly, use `hydrogen ocr file /path/to/note.png --engine handwriting` or `hydrogen ocr clip CLIPHIST_ID --engine handwriting`. Install the interactive models once from the Hydrogen checkout with `make install && make ocr-deps`. Model weights are downloaded on first use and cached locally. See the [Hydrogen OCR guide](https://github.com/oarabilekoore/hydrogen#ocr-runtime).
 
 ### File and image search
 
