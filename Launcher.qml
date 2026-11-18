@@ -118,6 +118,8 @@ PanelWindow {
 
     property var previewData: ({ kind: "none", key: "" })
     property int previewSeq: 0
+    property string observedIndexRevision: ""
+    property bool indexRevisionCheckRunning: false
 
     screen: targetScreen
     visible: open || card.opacity > 0.01
@@ -218,10 +220,30 @@ PanelWindow {
         sh(script, [file]);
     }
 
-    // Loads from disk cache first; refreshes Vector + FTS5 + filename cache asynchronously
+    // Hydrogen updates index.rev after every successful sync. Keep the launcher cache
+    // coherent with the daemon so deleted paths disappear and new paths appear promptly.
+    function checkIndexRevision() {
+        if (indexRevisionCheckRunning) return;
+        indexRevisionCheckRunning = true;
+        runCapture(["cat", stateDir + "/index.rev"], function (raw) {
+            root.indexRevisionCheckRunning = false;
+            const revision = String(raw || "").trim();
+            if (!revision || revision === root.observedIndexRevision) return;
+            root.observedIndexRevision = revision;
+            runCapture(["cat", fileCachePath], function (contents) {
+                root.cachedFiles = String(contents || "").split("\n").filter(l => l.length > 0);
+                root.fileCacheTime = Date.now();
+                if ((root.mode === "files" || root.mode === "all") && root.query.trim().length >= 2) {
+                    root.requestContentSearch();
+                }
+            });
+        });
+    }
+
+    // Loads from disk cache first; refreshes the Rust index asynchronously.
     function ensureFileCache() {
         const now = Date.now();
-        if (cachedFiles.length > 0 && (now - fileCacheTime) < 600000) return;
+        if (fileCacheTime > 0 && (now - fileCacheTime) < 600000) return;
 
         if (cachedFiles.length === 0) {
             runCapture(["cat", fileCachePath], function (t) {
@@ -254,9 +276,7 @@ PanelWindow {
             runCapture(["cat", fileCachePath], function (t) {
                 root.fileIndexing = false;
                 root.fileCacheTime = Date.now();
-                if (t && t.length > 0) {
-                    root.cachedFiles = t.split("\n").filter(l => l.length > 0);
-                }
+                root.cachedFiles = String(t || "").split("\n").filter(l => l.length > 0);
                 if ((root.mode === "files" || root.mode === "all") && root.query.trim().length >= 2) {
                     root.requestContentSearch();
                 }
@@ -296,6 +316,13 @@ PanelWindow {
     }
 
     Timer { id: contentSearchTimer; interval: 100; repeat: false; onTriggered: root.requestContentSearch() }
+    Timer {
+        id: indexRevisionTimer
+        interval: 1200
+        repeat: true
+        running: root.open && (root.mode === "files" || root.mode === "all")
+        onTriggered: root.checkIndexRevision()
+    }
 
     function installDefaultBangs() {
         runCapture(["cat", Quickshell.shellPath("data/bangs.json")], function (raw) {
@@ -1791,7 +1818,7 @@ PanelWindow {
                 "  h=$(printf '%s|%s' \"$p\" \"$st\" | sha256sum | cut -c1-16); " +
                 "  out=\"$d/pdf-$h\"; " +
                 "  if [ ! -f \"$out.png\" ] && command -v pdftoppm >/dev/null 2>&1; then " +
-                "    pdftoppm -png -f 1 -l 1 -scale-to 600 \"$p\" \"$out\" >/dev/null 2>&1 || true; " +
+                "    pdftoppm -singlefile -png -f 1 -l 1 -scale-to 600 \"$p\" \"$out\" >/dev/null 2>&1 || true; " +
                 "  fi; " +
                 "  if [ -f \"$out.png\" ]; then " +
                 "    printf 'PDF_IMG\\n%s\\n%s\\nPages: %s\\n%s' \"$m\" \"$st\" \"${pages:-?}\" \"$out.png\"; " +
