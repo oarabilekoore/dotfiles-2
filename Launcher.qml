@@ -1178,10 +1178,11 @@ PanelWindow {
         };
     }
 
-    function ocrImageFile(filePath) {
+    function ocrImageFile(filePath, engine) {
         if (!filePath) return;
         const args = [hydrogenBin, "ocr", "file", String(filePath)];
         if (root.previousWindowAddress) args.push("--window", root.previousWindowAddress);
+        if (engine) args.push("--engine", engine);
         Quickshell.execDetached(args);
     }
 
@@ -1191,7 +1192,11 @@ PanelWindow {
             { label: "Show in Folder", run: () => root.sh("gdbus call --session --dest org.freedesktop.FileManager1 --object-path /org/freedesktop/FileManager1 --method org.freedesktop.FileManager1.ShowItems \"['file://$1']\" '' >/dev/null 2>&1 || xdg-open \"$(dirname \"$1\")\"", [p]) }
         ];
         if (!isDir && isImageName(name)) {
-            acts.push({ label: "OCR to Markdown (Ctrl+O)", run: () => root.ocrImageFile(p) });
+            acts.push(
+                { label: "OCR to Markdown (Math + Text)", run: () => root.ocrImageFile(p) },
+                { label: "OCR Handwriting (TrOCR)", run: () => root.ocrImageFile(p, "handwriting") },
+                { label: "OCR with RapidOCR (Legacy)", run: () => root.ocrImageFile(p, "rapid") }
+            );
         }
         acts.push(
             { label: "Copy Path", run: () => Quickshell.execDetached(["wl-copy", p]) },
@@ -1383,10 +1388,11 @@ PanelWindow {
         });
     }
 
-    function ocrClipboardImage(id) {
+    function ocrClipboardImage(id, engine) {
         if (!id) return;
         const args = [hydrogenBin, "ocr", "clip", String(id)];
         if (root.previousWindowAddress) args.push("--window", root.previousWindowAddress);
+        if (engine) args.push("--engine", engine);
         Quickshell.execDetached(args);
     }
 
@@ -1430,10 +1436,11 @@ PanelWindow {
                 { label: "Copy to Clipboard", run: () => root.sh(decode, [id]) }
             ];
             if (img) {
-                actions.push({
-                    label: "OCR to Markdown (Ctrl+O)",
-                    run: () => root.ocrClipboardImage(id)
-                });
+                actions.push(
+                    { label: "OCR to Markdown (Math + Text)", run: () => root.ocrClipboardImage(id) },
+                    { label: "OCR Handwriting (TrOCR)", run: () => root.ocrClipboardImage(id, "handwriting") },
+                    { label: "OCR with RapidOCR (Legacy)", run: () => root.ocrClipboardImage(id, "rapid") }
+                );
             }
             actions.push(
                 { label: "Delete Entry (Del)", keepOpen: true, run: () => root.deleteClipboardEntry(line) },
