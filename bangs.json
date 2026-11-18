@@ -1,0 +1,228 @@
+[
+  {
+    "bang": "sh",
+    "aliases": [
+      "exec"
+    ],
+    "label": "Shell Command",
+    "type": "sh",
+    "description": "Run a shell command"
+  },
+  {
+    "bang": "sl",
+    "aliases": [
+      "sleep"
+    ],
+    "label": "Sleep",
+    "type": "cmd",
+    "cmd": "systemctl suspend",
+    "description": "Suspend the system"
+  },
+  {
+    "bang": "lock",
+    "label": "Lock Screen",
+    "type": "cmd",
+    "cmd": "hyprlock",
+    "description": "Lock screen with hyprlock"
+  },
+  {
+    "bang": "reboot",
+    "label": "Restart",
+    "type": "cmd",
+    "cmd": "systemctl reboot",
+    "confirm": true,
+    "description": "Reboot the system"
+  },
+  {
+    "bang": "off",
+    "aliases": [
+      "poweroff",
+      "shutdown"
+    ],
+    "label": "Shut Down",
+    "type": "cmd",
+    "cmd": "systemctl poweroff",
+    "confirm": true,
+    "description": "Power off the system"
+  },
+  {
+    "bang": "hister",
+    "aliases": [
+      "h",
+      "his"
+    ],
+    "label": "Hister",
+    "type": "url",
+    "template": "http://127.0.0.1:4433/?q={query}",
+    "emptyUrl": "http://127.0.0.1:4433/"
+  },
+  {
+    "bang": "yt",
+    "label": "YouTube",
+    "type": "url",
+    "template": "https://www.youtube.com/results?search_query={query}"
+  },
+  {
+    "bang": "g",
+    "label": "Google",
+    "type": "url",
+    "template": "https://www.google.com/search?q={query}"
+  },
+  {
+    "bang": "ddg",
+    "label": "DuckDuckGo",
+    "type": "url",
+    "template": "https://duckduckgo.com/?q={query}"
+  },
+  {
+    "bang": "gh",
+    "label": "GitHub",
+    "type": "url",
+    "template": "https://github.com/search?q={query}"
+  },
+  {
+    "bang": "aw",
+    "label": "Arch Wiki",
+    "type": "url",
+    "template": "https://wiki.archlinux.org/index.php?search={query}"
+  },
+  {
+    "bang": "aur",
+    "label": "AUR",
+    "type": "url",
+    "template": "https://aur.archlinux.org/packages?K={query}"
+  },
+  {
+    "bang": "arch",
+    "aliases": [
+      "pkg"
+    ],
+    "label": "Arch Packages",
+    "type": "url",
+    "template": "https://archlinux.org/packages/?q={query}"
+  },
+  {
+    "bang": "flat",
+    "aliases": [
+      "fh"
+    ],
+    "label": "Flathub",
+    "type": "url",
+    "template": "https://flathub.org/apps/search?q={query}"
+  },
+  {
+    "bang": "hypr",
+    "label": "Hyprland Wiki",
+    "type": "url",
+    "template": "https://duckduckgo.com/?q=site%3Awiki.hypr.land+{query}"
+  },
+  {
+    "bang": "w",
+    "label": "Wikipedia",
+    "type": "url",
+    "template": "https://en.wikipedia.org/w/index.php?search={query}"
+  },
+  {
+    "bang": "maps",
+    "label": "Google Maps",
+    "type": "url",
+    "template": "https://www.google.com/maps/search/{query}"
+  },
+  {
+    "bang": "wa",
+    "aliases": [
+      "calc",
+      "math"
+    ],
+    "label": "WolframAlpha",
+    "type": "url",
+    "template": "https://www.wolframalpha.com/input?i={query}"
+  },
+  {
+    "bang": "gs",
+    "aliases": [
+      "scholar"
+    ],
+    "label": "Google Scholar",
+    "type": "url",
+    "template": "https://scholar.google.com/scholar?q={query}"
+  },
+  {
+    "bang": "ds",
+    "aliases": [
+      "datasheet"
+    ],
+    "label": "AllDatasheet",
+    "type": "url",
+    "template": "https://www.alldatasheet.com/view.jsp?Searchword={query}"
+  },
+  {
+    "bang": "so",
+    "label": "Stack Overflow",
+    "type": "url",
+    "template": "https://stackoverflow.com/search?q={query}"
+  },
+  {
+    "bang": "mdn",
+    "label": "MDN Web Docs",
+    "type": "url",
+    "template": "https://developer.mozilla.org/en-US/search?q={query}"
+  },
+  {
+    "bang": "pypi",
+    "label": "PyPI",
+    "type": "url",
+    "template": "https://pypi.org/search/?q={query}"
+  },
+  {
+    "bang": "npm",
+    "label": "npm",
+    "type": "url",
+    "template": "https://www.npmjs.com/search?q={query}"
+  },
+  {
+    "bang": "r",
+    "aliases": [
+      "reddit"
+    ],
+    "label": "Reddit",
+    "type": "url",
+    "template": "https://www.reddit.com/search/?q={query}"
+  },
+  {
+    "bang": "pdb",
+    "aliases": [
+      "proton"
+    ],
+    "label": "ProtonDB",
+    "type": "url",
+    "template": "https://www.protondb.com/search?q={query}"
+  },
+  {
+    "bang": "al",
+    "aliases": [
+      "anime"
+    ],
+    "label": "AniList",
+    "type": "url",
+    "template": "https://anilist.co/search/anime?search={query}"
+  },
+  {
+    "bang": "sp",
+    "aliases": [
+      "spotify"
+    ],
+    "label": "Spotify",
+    "type": "url",
+    "template": "https://open.spotify.com/search/{query}"
+  },
+  {
+    "bang": "tr",
+    "aliases": [
+      "translate"
+    ],
+    "label": "Google Translate",
+    "type": "url",
+    "template": "https://translate.google.com/?sl=auto&tl=en&text={query}"
+  }
+]

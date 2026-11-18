@@ -1,0 +1,32 @@
+[
+  {
+    "trigger": "hdr",
+    "title": "Coursework Header",
+    "body": "Student Name: Oarabile Koore | Student ID: 24019569\nDate: {date}"
+  },
+  {
+    "trigger": "eq",
+    "title": "LaTeX Display Equation",
+    "body": "$$\n{clipboard}\n$$"
+  },
+  {
+    "trigger": "fish",
+    "title": "Fish Script Boilerplate",
+    "body": "#!/usr/bin/env fish\n\n"
+  },
+  {
+    "trigger": "py",
+    "title": "Python 3 Script Header",
+    "body": "#!/usr/bin/env python3\n\n\ndef main() -> None:\n    pass\n\n\nif __name__ == \"__main__\":\n    main()\n"
+  },
+  {
+    "trigger": "dt",
+    "title": "Current Date & Time",
+    "body": "{datetime}"
+  },
+  {
+    "trigger": "uuid",
+    "title": "Random UUID v4",
+    "body": "{uuid}"
+  }
+]
