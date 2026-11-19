@@ -9,7 +9,7 @@ The Quickshell interface is organised around a small set of top-level QML compon
 - `shell.qml` is the shell entry point. It creates the bar instances, launcher, settings window, and IPC handlers.
 - `Bar.qml` and the related components provide the panel and status indicators.
 - `Launcher.qml` provides application/command search, file search, clipboard history, emoji selection, snippets, calculator and unit conversion, configurable bangs, and OCR actions.
-- `Settings.qml`, `Config.qml`, and `Theme.qml` provide the settings and appearance system.
+- `Settings.qml`, `Config.qml`, and `Theme.qml` provide the settings and appearance system, including per-module bar visibility controls.
 - `popups/` and other QML components provide focused system controls.
 - `scripts/` contains helper utilities used by the desktop.
 - `docs/` contains feature-specific guides.
@@ -97,7 +97,7 @@ Do not commit personal tokens, API keys, private paths, or machine-specific secr
 
 ## Related project
 
-[Hydrogen](https://github.com/oarabilekoore/hydrogen) is the native Rust backend used by the launcher for indexing, search, OCR, and calendar operations.
+[Hydrogen](https://github.com/oarabilekoore/hydrogen) provides the launcher’s indexing, content-search and OCR commands. Its model/runtime requirements and supported operations are documented in the Hydrogen repository.
 
 ## License
 
