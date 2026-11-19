@@ -20,6 +20,7 @@ PanelWindow {
         { id: "system",       label: "Sound & Display", glyph: "󰒓", group: "HARDWARE" },
         { id: "devices",      label: "Devices",         glyph: "󰍹", group: "HARDWARE" },
         { id: "typography",   label: "Typography",      glyph: "󰛖", group: "PERSONALIZATION" },
+        { id: "bar",          label: "Bar modules",     glyph: "󰕰", group: "PERSONALIZATION" },
         { id: "sharing",      label: "Display Sharing", glyph: "󰍹", group: "HARDWARE" },
         { id: "system-settings", label: "System",       glyph: "󰒓", group: "SYSTEM" },
         { id: "network",      label: "Network",         glyph: "󰖩", group: "CONNECTIVITY" },
@@ -1420,6 +1421,65 @@ PanelWindow {
                         }
                     }
                     Text { visible: root.monitors.length === 0 && root.inputDevices.length === 0; text: "No device information available. Check that Hyprland is running."; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: Theme.on_surface_variant }
+                }
+
+                // ============================================================== BAR MODULES
+                ColumnLayout {
+                    visible: root.activeTab === "bar"
+                    Layout.fillWidth: true; Layout.fillHeight: true; Layout.margins: 20; spacing: 10
+                    Text { text: "PANEL VISIBILITY"; font.family: Theme.fontFamily; font.pixelSize: 11; font.bold: true; color: Theme.on_surface_variant }
+                    Text { text: "Choose which modules occupy space in the top bar. Changes are saved automatically."; Layout.fillWidth: true; wrapMode: Text.WordWrap; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: Theme.on_surface_variant }
+                    Repeater {
+                        model: [
+                            { key: "showWorkspaces", title: "Workspaces", detail: "Hyprland workspace indicators" },
+                            { key: "showMpris", title: "Media player", detail: "Current track and playback controls" },
+                            { key: "showDictation", title: "Dictation", detail: "Dictation status and controls" },
+                            { key: "showTray", title: "System tray", detail: "Application tray icons" },
+                            { key: "showBluetooth", title: "Bluetooth", detail: "Bluetooth status and device popup" },
+                            { key: "showCaffeine", title: "Caffeine", detail: "Idle inhibition indicator" },
+                            { key: "showNetwork", title: "Network", detail: "Wi-Fi status and network popup" },
+                            { key: "showBattery", title: "Battery", detail: "Battery level and power status" },
+                            { key: "showClock", title: "Clock", detail: "Date and time in the centre of the bar" }
+                        ]
+                        delegate: Rectangle {
+                            required property var modelData
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 48
+                            color: Theme.surface_variant
+                            border.width: 1
+                            border.color: Theme.outline_variant
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 12
+                                anchors.rightMargin: 12
+                                spacing: 10
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 2
+                                    Text { text: modelData.title; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize; color: Theme.on_surface }
+                                    Text { text: modelData.detail; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: Theme.on_surface_variant }
+                                }
+                                Rectangle {
+                                    Layout.preferredWidth: 38
+                                    Layout.preferredHeight: 22
+                                    radius: 11
+                                    color: Config[modelData.key] ? Theme.primary : Theme.outline
+                                    Rectangle {
+                                        width: 16; height: 16; radius: 8
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        x: Config[modelData.key] ? parent.width - width - 3 : 3
+                                        color: Theme.foreground
+                                    }
+                                }
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: Config.set(modelData.key, !Config[modelData.key])
+                            }
+                        }
+                    }
+                    Item { Layout.fillHeight: true }
                 }
 
                 // ============================================================== TYPOGRAPHY
