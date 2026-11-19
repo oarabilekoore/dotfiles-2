@@ -28,6 +28,11 @@ PanelWindow {
     readonly property string bangConfigPath: homeDir + "/.config/quickshell/bangs.json"
     readonly property string snippetConfigPath: homeDir + "/.config/quickshell/snippets.json"
     readonly property string hydrogenBin: "hydrogen"
+    // Open-at-match commands. Placeholders: {file} {page} {line} {find}. Empty pdfViewerCmd = auto-detect
+    // (zathura, okular, evince, mupdf, then xdg-open).
+    property var pdfViewerCmd: []
+    property var editorCmd: ["nvim", "+{line}", "{file}"]
+    property bool editorInTerminal: true
 
     readonly property var searchDirs: [
         homeDir + "/Documents",
@@ -1213,11 +1218,48 @@ PanelWindow {
         Quickshell.execDetached(args);
     }
 
-    function buildFileActions(p, dir, isDir, name) {
+    function fillCmd(tpl, vars) {
+        return tpl.map(a => String(a).replace(/\{(file|page|line|find)\}/g, (_m, k) => String(vars[k])));
+    }
+
+    // Search string handed to the viewer: the whole query for a phrase hit, else the longest word.
+    function matchNeedle(cr) {
+        const q = query.trim();
+        if (cr && cr.phrase) return q;
+        const words = q.split(/\s+/).filter(w => w.length > 0).sort((a, b) => b.length - a.length);
+        return words.length > 0 ? words[0] : q;
+    }
+
+    function openAtMatch(p, jump) {
+        if (jump.page) {
+            const vars = { file: p, page: jump.page, line: jump.line || 1, find: jump.needle };
+            if (pdfViewerCmd.length > 0) { Quickshell.execDetached(fillCmd(pdfViewerCmd, vars)); return; }
+            root.sh(
+                'f="$1"; pg="$2"; n="$3"; ' +
+                'if command -v zathura >/dev/null 2>&1; then zathura -P "$pg" -f "$n" "$f" 2>/dev/null || zathura -P "$pg" "$f"; ' +
+                'elif command -v okular >/dev/null 2>&1; then okular --page "$pg" --find "$n" "$f" 2>/dev/null || okular --page "$pg" "$f"; ' +
+                'elif command -v evince >/dev/null 2>&1; then evince --page-index="$pg" --find="$n" "$f" 2>/dev/null || evince --page-index="$pg" "$f"; ' +
+                'elif command -v mupdf >/dev/null 2>&1; then mupdf "$f" "$pg"; ' +
+                'else xdg-open "$f"; fi',
+                [p, String(jump.page), jump.needle]);
+        } else if (jump.line) {
+            const cmd = fillCmd(editorCmd, { file: p, page: 1, line: jump.line, find: jump.needle });
+            Quickshell.execDetached(editorInTerminal ? [terminal, "-e"].concat(cmd) : cmd);
+        } else {
+            Quickshell.execDetached(["xdg-open", p]);
+        }
+    }
+
+    function buildFileActions(p, dir, isDir, name, jump) {
         const acts = [
-            { label: "Open", run: () => Quickshell.execDetached(["xdg-open", p]) },
+            jump && (jump.page || jump.line)
+                ? { label: jump.page ? ("Open at page " + jump.page) : ("Open at line " + jump.line), run: () => root.openAtMatch(p, jump) }
+                : { label: "Open", run: () => Quickshell.execDetached(["xdg-open", p]) },
             { label: "Show in Folder", run: () => root.sh("gdbus call --session --dest org.freedesktop.FileManager1 --object-path /org/freedesktop/FileManager1 --method org.freedesktop.FileManager1.ShowItems \"['file://$1']\" '' >/dev/null 2>&1 || xdg-open \"$(dirname \"$1\")\"", [p]) }
         ];
+        if (jump && (jump.page || jump.line)) {
+            acts.push({ label: "Open (no jump)", run: () => Quickshell.execDetached(["xdg-open", p]) });
+        }
         if (!isDir && isImageName(name)) {
             acts.push(
                 { label: "OCR to Markdown (Math + Text)", run: () => root.ocrImageFile(p) },
@@ -1251,7 +1293,11 @@ PanelWindow {
                 const m = scoreText(name, terms, false);
                 const hh = m ? m.hits : [];
                 const snip = String(cr.snippet || "").trim();
-                const sub = snip ? (snip + " · " + tilde(dir)) : tilde(dir);
+                const page = Number(cr.page) > 0 ? Number(cr.page) : 0;
+                const line = Number(cr.line) > 0 ? Number(cr.line) : 0;
+                const where = page ? ("p." + page + " · ") : (line ? ("L" + line + " · ") : "");
+                const sub = where + (snip ? (snip + " · " + tilde(dir)) : tilde(dir));
+                const jump = { page: page, line: line, needle: matchNeedle(cr) };
                 const vecPct = Math.round((Number(cr.vec) || 0) * 100);
                 const fmt = fileFormatInfo(name, false, p);
                 const isImgHit = cr.source === "image";
@@ -1259,7 +1305,7 @@ PanelWindow {
                                 : (vecPct >= 14 ? ((isImgHit ? "Vision " : "Match ") + vecPct + "%")
                                 : (fmt.fmtBadge || "Content"));
                 out.push({
-                    key: "file:" + p,
+                    key: "file:" + p + (page ? "#p" + page : (line ? "#L" + line : "")),
                     section: "Files · Content & Vision Match",
                     title: name,
                     subtitle: sub,
@@ -1269,8 +1315,8 @@ PanelWindow {
                     badge: badgeText,
                     hits: hh,
                     score: 2500 + (Number(cr.score) || 0),
-                    preview: { type: "file", path: p, isDir: false },
-                    actions: buildFileActions(p, dir, false, name)
+                    preview: { type: "file", path: p, isDir: false, page: page, line: line, pagePreview: String(cr.preview || "") },
+                    actions: buildFileActions(p, dir, false, name, jump)
                 });
             }
         }
@@ -1806,7 +1852,7 @@ PanelWindow {
         } else if (pv.type === "file") {
             const name = pv.path.slice(pv.path.lastIndexOf("/") + 1);
             const script =
-                "p=\"$1\"; " +
+                "p=\"$1\"; pg=\"$2\"; ln=\"$3\"; pp=\"$4\"; " +
                 "m=$(file -b --mime-type -- \"$p\" 2>/dev/null); " +
                 "st=$(stat -c '%s|%Y' -- \"$p\" 2>/dev/null); " +
                 "if [ -d \"$p\" ]; then " +
@@ -1816,9 +1862,11 @@ PanelWindow {
                 "  pages=$(pdfinfo \"$p\" 2>/dev/null | awk '/^Pages:/ {print $2}'); " +
                 "  d=\"$XDG_RUNTIME_DIR/qs-launcher\"; mkdir -p \"$d\"; " +
                 "  h=$(printf '%s|%s' \"$p\" \"$st\" | sha256sum | cut -c1-16); " +
-                "  out=\"$d/pdf-$h\"; " +
-                "  if [ ! -f \"$out.png\" ] && command -v pdftoppm >/dev/null 2>&1; then " +
-                "    pdftoppm -singlefile -png -f 1 -l 1 -scale-to 600 \"$p\" \"$out\" >/dev/null 2>&1 || true; " +
+                "  [ -n \"$pg\" ] && [ \"$pg\" -gt 0 ] 2>/dev/null || pg=1; " +
+                "  out=\"$d/pdf-$h-p$pg\"; " +
+                "  if [ -n \"$pp\" ] && [ -f \"$pp\" ]; then out=\"${pp%.png}\"; " +
+                "  elif [ ! -f \"$out.png\" ] && command -v pdftoppm >/dev/null 2>&1; then " +
+                "    pdftoppm -singlefile -png -f \"$pg\" -l \"$pg\" -scale-to 600 \"$p\" \"$out\" >/dev/null 2>&1 || true; " +
                 "  fi; " +
                 "  if [ -f \"$out.png\" ]; then " +
                 "    printf 'PDF_IMG\\n%s\\n%s\\nPages: %s\\n%s' \"$m\" \"$st\" \"${pages:-?}\" \"$out.png\"; " +
@@ -1840,11 +1888,13 @@ PanelWindow {
                 "  printf 'TEXT\\n%s\\n%s\\n\\n' \"$m\" \"$st\"; " +
                 "  case \"$m\" in " +
                 "    text/*|application/json|application/xml|application/javascript|application/x-shellscript|application/toml|inode/x-empty) " +
-                "      head -c 6000 -- \"$p\" ;; " +
+                "      if [ -n \"$ln\" ] && [ \"$ln\" -gt 0 ] 2>/dev/null; then " +
+                "        awk -v L=\"$ln\" 'NR>=L-5 && NR<=L+25 { printf \"%s%5d  %s\\n\", (NR==L ? \"▶\" : \" \"), NR, substr($0, 1, 200) }' \"$p\" | head -c 6000; " +
+                "      else head -c 6000 -- \"$p\"; fi ;; " +
                 "  esac; " +
                 "fi";
 
-            runCapture(["sh", "-c", script, "_", pv.path], function (t) {
+            runCapture(["sh", "-c", script, "_", pv.path, String(pv.page || ""), String(pv.line || ""), String(pv.pagePreview || "")], function (t) {
                 const lines = t.split("\n");
                 const modeTag = lines[0] || "TEXT";
                 const mime = lines[1] || "";
@@ -1862,6 +1912,8 @@ PanelWindow {
                     if (sp > 0) meta.push([extra.slice(0, sp), extra.slice(sp + 2)]);
                     else meta.push(["Media", extra]);
                 }
+                if (pv.page) meta.push(["Match", "Page " + pv.page]);
+                else if (pv.line) meta.push(["Match", "Line " + pv.line]);
                 meta.push(["Path", tilde(pv.path)]);
 
                 if (modeTag === "PDF_IMG" && body.trim().length > 0) {

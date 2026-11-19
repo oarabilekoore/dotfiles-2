@@ -44,6 +44,25 @@ A dmenu-compatible caller can pass a prompt, input file and output file:
 quickshell ipc call launcher dmenu "Select an item" /tmp/options.txt /tmp/selection.txt
 ```
 
+## Open at match and previews
+
+Content hits from Hydrogen carry the matching `page` (PDFs) or `line`
+(plain-text and code files). `Enter` opens the file at that spot, `Ctrl+Enter`
+still shows it in the folder. The preview pane shows the matching PDF page, or
+the lines around the matching line (marked with `▶`).
+
+Override the commands at the top of `Launcher.qml` if needed. Placeholders are
+`{file}`, `{page}`, `{line}` and `{find}`:
+
+```qml
+property var pdfViewerCmd: ["zathura", "-P", "{page}", "-f", "{find}", "{file}"]
+property var editorCmd: ["nvim", "+{line}", "{file}"]
+property bool editorInTerminal: true
+```
+
+With `pdfViewerCmd` empty the launcher tries zathura, okular, evince and mupdf,
+then falls back to `xdg-open`.
+
 ## Hydrogen integration
 
 Hydrogen is expected to be available on `PATH`. The launcher uses:
