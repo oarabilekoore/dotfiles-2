@@ -94,10 +94,4 @@ Singleton {
         function reload(): void { paletteFile.reload(); }
     }
 
-    Timer {
-        interval: 2000
-        running: true
-        repeat: true
-        onTriggered: paletteFile.reload()
-    }
 }
