@@ -67,14 +67,15 @@ PanelWindow {
         anchors.verticalCenter: parent.verticalCenter
         spacing: 0
 
-        Workspaces {}
+        Workspaces { visible: Config.showWorkspaces }
 
         MprisModule {
             id: mprisMod
             parentBar: barWindow
+            visible: Config.showMpris
         }
 
-        DictationModule {}
+        DictationModule { visible: Config.showDictation }
     }
 
     // --- CENTER MODULE (CLOCK) ---
@@ -83,6 +84,7 @@ PanelWindow {
         anchors.centerIn: parent
         parentBar: barWindow
         osd: barWindow.osd
+        visible: Config.showClock
     }
 
     // --- RIGHT MODULES ---
@@ -96,20 +98,24 @@ PanelWindow {
         SystemTrayModule {
             id: trayMod
             parentBar: barWindow
+            visible: Config.showTray
         }
 
         BluetoothModule {
             id: btMod
             parentBar: barWindow
+            visible: Config.showBluetooth
         }
 
         CaffeineModule {
             id: cafMod
+            visible: Config.showCaffeine
         }
 
         NetworkModule {
             id: netMod
             parentBar: barWindow
+            visible: Config.showNetwork
         }
 
         VolumeModule {
@@ -120,6 +126,7 @@ PanelWindow {
         BatteryModule {
             id: batMod
             parentBar: barWindow
+            visible: Config.showBattery
         }
 
         SettingsModule {
