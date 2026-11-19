@@ -1,43 +1,86 @@
 # Quickshell Launcher Guide
 
-A keyboard-driven Wayland launcher built with Quickshell (`~/.config/quickshell/Launcher.qml`), featuring hybrid Vector + SQLite FTS5 file content search, rich file previews, clipboard OCR, dynamic snippets, configurable `!bangs`, and a universal `dmenu` IPC interface.
+The launcher is the keyboard-driven application and workflow surface for this
+Quickshell setup. It delegates file indexing, content search and OCR to the
+Hydrogen command-line backend.
 
----
+## Modes and shortcuts
 
-## 1. Modes & Prefix Sigils
+| Mode | Shortcut | Sigil in All mode | Purpose |
+| --- | --- | --- | --- |
+| All | `Alt+1` | Default | Search applications, commands, files, snippets and configured bangs |
+| Files | `Alt+2` | `/` | Search filenames and indexed document/image content |
+| Clipboard | `Alt+3` | `;` | Browse `cliphist` history, preview entries and run OCR on images |
+| Emoji | `Alt+4` | `'` | Search and paste emoji |
+| Snippets | `Alt+5` | `,` | Search and expand text templates |
+| Hidden apps | Launcher action | — | View and unhide hidden desktop entries |
 
-Type a sigil as the **first character** in `All` mode to switch directly into that mode, press `Tab` / `Shift+Tab` to cycle modes, or jump via `Alt+1`–`Alt+5`.
+Use `Tab` and `Shift+Tab` to cycle modes. The first character sigils only
+switch modes when typed at the beginning of an All-mode query.
 
-| Mode | Sigil | Shortcut | IPC Command | Purpose |
-| :--- | :---: | :---: | :--- | :--- |
-| **All** | *(default)* | `Alt+1` | `quickshell ipc call launcher toggle all` | Unified search across apps, commands, vector/FTS5 file contents, filenames, snippets, calculator, units, and web |
-| **Files** | `/` | `Alt+2` | `quickshell ipc call launcher toggle files` | Hybrid Vector + FTS5 content search + filename search across `~/Documents`, `~/Downloads`, `~/Pictures`, `~/Videos`, `~/Projects` |
-| **Clipboard** | `;` | `Alt+3` | `quickshell ipc call launcher toggle clipboard` | `cliphist` history with image/text preview, single-entry delete (`Del`), full wipe (`Ctrl+D`), and image OCR (`Ctrl+O`) |
-| **Emoji** | `'` | `Alt+4` | `quickshell ipc call launcher toggle emoji` | Grid emoji picker with recency boost and automatic paste-back into the previous window |
-| **Snippets** | `,` | `Alt+5` | `quickshell ipc call launcher toggle snippets` | Dynamic text templates from `~/.config/quickshell/snippets.json` |
-| **Hidden Apps** | — | — | `quickshell ipc call launcher toggle hidden` | View and unhide desktop entries hidden with `Ctrl+B` |
-| **Shell Run** | `>` | — | — | Execute an arbitrary shell command (`Enter` background, `Ctrl+Enter` in `ghostty`) |
-| **Calculator** | `=` | — | — | Force math evaluation (also works inline without `=`, e.g. `sqrt(144) + 2^5` or `150 km to mi`) |
-| **Bangs** | `!` | — | — | Configurable search & command shortcuts from `~/.config/quickshell/bangs.json` (`!sl`, `!sh`, `!yt`, `!hister`, etc.) |
+Other All-mode prefixes:
 
----
+- `>` runs a shell command. `Enter` runs it detached; `Ctrl+Enter` opens it
+  in Ghostty.
+- `=` forces calculator evaluation. Basic arithmetic, common functions,
+  constants and supported unit conversions are available.
+- `!` invokes a configured bang.
 
-## 2. Hybrid Vector + FTS5 File Content Search
+## IPC
 
-Searching in **All** or **Files (`/`)** mode combines two ranking layers:
+The shell exposes these launcher commands:
 
-1. **Vector Table (`file_vectors`):** Every indexed document (`.pdf`, `.docx`, `.odt`, `.epub`, `.md`, `.txt`, `.tex`, `.typ`, code files) is embedded into a **128-dimensional L2-normalized dense vector** (`float32` `BLOB` in `~/.local/state/quickshell-launcher/content-index.db`) using signed n-gram feature projection over title and body text.
-2. **SQLite FTS5 + BM25 (`files_fts`):** Uses `porter unicode61` tokenization with `bm25(files_fts, 10.0, 1.0)` and `snippet()` to extract the exact matching passage from inside PDFs and documents.
-3. **Ranking Priority:** Vector similarity matches are weighted `1.6x` and scored above lexical-only and filename-only matches (`file-index.txt`), so typing a phrase from inside a PDF surfaces the exact PDF at the top even if its filename is unrelated.
+```sh
+quickshell ipc call launcher toggle all
+quickshell ipc call launcher open files
+quickshell ipc call launcher close
+quickshell ipc call launcher reindex
+quickshell ipc call launcher reloadConfig
+```
 
-### Index CLI (`scripts/file_index.py`)
+A dmenu-compatible caller can pass a prompt, input file and output file:
 
-```fish
-# Incrementally update vectors, FTS5, and file-index.txt
-python3 ~/.config/quickshell/scripts/file_index.py sync
+```sh
+quickshell ipc call launcher dmenu "Select an item" /tmp/options.txt /tmp/selection.txt
+```
 
-# Query the hybrid index directly from the terminal
-python3 ~/.config/quickshell/scripts/file_index.py search "The development of generative artificial intelligence"
+## Hydrogen integration
 
-# Check indexed file count and SQLite database size
-python3 ~/.config/quickshell/scripts/file_index.py stats
+Hydrogen is expected to be available on `PATH`. The launcher uses:
+
+- `hydrogen index sync` to synchronise the index.
+- `hydrogen query QUERY --limit 25` to retrieve content-search results.
+- `hydrogen index sync-images` for the explicit image-index action.
+- Hydrogen's OCR commands for clipboard and file image recognition.
+
+The launcher caches the filename list in
+`~/.local/state/quickshell-launcher/file-index.txt`. It watches Hydrogen's
+`index.rev` revision marker while the launcher is open, so a completed index
+sync invalidates the local cache and refreshes active file searches. This is a
+cache refresh mechanism, not a replacement for Hydrogen's filesystem watcher.
+
+The actual searchable roots and index state directory are configured by
+Hydrogen, not by this QML file. Check the Hydrogen configuration and CLI help
+when changing those settings.
+
+## OCR
+
+- In Clipboard mode, select an image and press `Ctrl+O`.
+- In Files mode, use the image action labelled **OCR to Markdown**.
+- The result is copied as text and pasted into the previously focused window.
+
+The available OCR engines and model installation steps are maintained by
+Hydrogen. See the [Hydrogen OCR documentation](https://github.com/oarabilekoore/hydrogen#ocr-runtime)
+rather than installing a second OCR stack from this repository.
+
+## User configuration
+
+The launcher reads:
+
+- `~/.config/quickshell/bangs.json`
+- `~/.config/quickshell/snippets.json`
+- `~/.local/state/quickshell-launcher/state.json`
+
+Bundled bang defaults are copied into the user configuration directory on
+first launch. Keep personal snippets and machine-specific settings out of
+version control.
