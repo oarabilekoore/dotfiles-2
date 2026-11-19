@@ -122,6 +122,8 @@ Singleton {
             colorScheme: "wallust", wallustAutoReload: true, accentColor: "#7aa2f7",
             fontFamily: "JetBrainsMono Nerd Font Propo", fontScale: 1.0, cornerRadius: 0,
             borderWidth: 1, barPosition: "top", barHeight: 32, barFloating: false, barMargin: 0,
+            showWorkspaces: true, showMpris: true, showDictation: true, showCaffeine: true,
+            showTray: true, showNetwork: true, showBluetooth: true, showBattery: true, showClock: true,
             gapsIn: 4, gapsOut: 8, hyprBorderSize: 1, hyprRounding: 0, hyprLayout: "dwindle",
             hyprBlur: false, hyprBlurPasses: 2, hyprShadows: false, hyprAnimations: true,
             focusFollowsMouse: true, mouseSensitivity: 0.0, naturalScroll: false,
