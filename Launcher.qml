@@ -46,7 +46,7 @@ PanelWindow {
     readonly property var modeMeta: ({
         all:       { label: "All",       glyph: "󰍉", hint: "Search apps, file contents, snippets (,hdr), or !sl / !sh / !yt / !hister…" },
         files:     { label: "Files",     glyph: "󰈔", hint: "Search filenames, document contents & image OCR/captions…" },
-        clipboard: { label: "Clipboard", glyph: "󰅌", hint: "Search clipboard history (Del delete, Ctrl+D clear, Ctrl+O OCR)…" },
+        clipboard: { label: "Clipboard", glyph: "󰅌", hint: "Search clipboard history (Del delete, Ctrl+D clear)…" },
         emoji:     { label: "Emoji",     glyph: "󰞅", hint: "Search emoji…" },
         snippets:  { label: "Snippets",  glyph: "󰩫", hint: "Search snippets & dynamic templates ({date}, {clipboard}, {uuid})…" },
         hidden:    { label: "Hidden",    glyph: "󰈉", hint: "Hidden applications (Ctrl+B to unhide)…" },
@@ -1461,14 +1461,6 @@ PanelWindow {
         });
     }
 
-    function ocrClipboardImage(id, engine) {
-        if (!id) return;
-        const args = [hydrogenBin, "ocr", "clip", String(id)];
-        if (root.previousWindowAddress) args.push("--window", root.previousWindowAddress);
-        if (engine) args.push("--engine", engine);
-        Quickshell.execDetached(args);
-    }
-
     function deleteClipboardEntry(rawLine) {
         if (!rawLine) return;
         root.clipLines = root.clipLines.filter(l => l !== rawLine);
@@ -1508,13 +1500,6 @@ PanelWindow {
                 { label: "Paste into Previous Window", run: () => root.sh(decode + "; sleep 0.30; wtype -M ctrl v -m ctrl", [id]) },
                 { label: "Copy to Clipboard", run: () => root.sh(decode, [id]) }
             ];
-            if (img) {
-                actions.push(
-                    { label: "OCR to Markdown (Math + Text)", run: () => root.ocrClipboardImage(id) },
-                    { label: "OCR Handwriting (TrOCR)", run: () => root.ocrClipboardImage(id, "handwriting") },
-                    { label: "OCR with RapidOCR (Legacy)", run: () => root.ocrClipboardImage(id, "rapid") }
-                );
-            }
             actions.push(
                 { label: "Delete Entry (Del)", keepOpen: true, run: () => root.deleteClipboardEntry(line) },
                 {
@@ -1772,12 +1757,6 @@ PanelWindow {
         case Qt.Key_Backtab: cycleMode(-1); return;
         case Qt.Key_O:
             if (ctrl && current && current.preview) {
-                if (current.preview.type === "clip" && current.preview.image) {
-                    actionsOpen = false;
-                    ocrClipboardImage(current.preview.id);
-                    dismiss();
-                    return;
-                }
                 if (current.preview.type === "file" && !current.preview.isDir && isImageName(current.preview.path)) {
                     actionsOpen = false;
                     ocrImageFile(current.preview.path);
