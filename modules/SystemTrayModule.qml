@@ -22,11 +22,12 @@ Row {
         id: entry
 
         required property var modelData
+        property var trayRoot: null
         property bool passiveGroup: false
         readonly property var item: modelData
         readonly property bool belongsHere: (item.status === Status.Passive) === passiveGroup
 
-        width: root.expanded && belongsHere ? Theme.moduleWidth : 0
+        width: trayRoot && trayRoot.expanded && belongsHere ? Theme.moduleWidth : 0
         height: Theme.barHeight
         clip: true
         color: trayMouse.containsMouse ? Theme.alpha(Theme.foreground, 0.08) : "transparent"
@@ -37,7 +38,7 @@ Row {
         }
 
         function openMenu() {
-            const bar = root.parentBar;
+            const bar = entry.trayRoot ? entry.trayRoot.parentBar : null;
             if (!bar || !entry.item || !entry.item.hasMenu) return;
             const same = bar.activePopup === "traymenu" && bar.trayItem === entry.item;
             bar.trayItem = entry.item;
@@ -59,9 +60,9 @@ Row {
         IconImage {
             id: trayIcon
             anchors.centerIn: parent
-            width: root.iconSize
-            height: root.iconSize
-            implicitSize: root.iconSize
+            width: trayRoot ? trayRoot.iconSize : 16
+            height: trayRoot ? trayRoot.iconSize : 16
+            implicitSize: trayRoot ? trayRoot.iconSize : 16
             mipmap: true
             source: entry.item ? entry.item.icon : ""
         }
@@ -118,6 +119,7 @@ Row {
         id: activeRepeater
         model: SystemTray.items
         delegate: TrayEntry {
+            trayRoot: root
             passiveGroup: false
         }
     }
