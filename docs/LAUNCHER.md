@@ -53,7 +53,7 @@ HYDROGEN_EMBEDDINGS=1 hydrogen index embed
 
 The first run downloads MiniLM and CLIP model files and backfills vectors for already indexed documents and images. This initial step can use additional CPU and RAM. The launcher saves the enabled state in `~/.local/state/quickshell-launcher/state.json`; future file and image syncs then run with `HYDROGEN_EMBEDDINGS=1` so changed content receives updated vectors. Text queries use `--semantic` and image actions use the CLIP image encoder.
 
-To disable semantic queries and future embedding updates, set `"semantic": false` in the state file. Existing vector rows are not deleted.
+To disable semantic queries and future embedding updates, choose **Disable Semantic & Visual Search** in the launcher. Existing vector rows and downloaded model files are not deleted.
 
 ### Index and cache refresh
 
