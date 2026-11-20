@@ -5,9 +5,9 @@ Personal Linux desktop configuration built around **Hyprland** and **Quickshell*
 ## Overview
 
 - `shell.qml` is the shell entry point. It creates the bar instances, launcher, settings window, and IPC handlers.
-- `Bar.qml` and related components provide the panel and status indicators. Heavy popup windows, the launcher, and the control center are lazy-loaded and released after closing to reduce idle memory.
+- `Bar.qml` and related components provide the panel and status indicators. Heavy popup windows, the launcher, are lazy-loaded and released after closing to reduce idle memory.
 - `Launcher.qml` provides application/command search, hybrid file and image search, clipboard history, emoji selection, snippets, calculator and unit conversion, configurable bangs, and file OCR.
-- `Settings.qml`, `Config.qml`, and `Theme.qml` provide settings and appearance controls.
+- `Config.qml` and `Theme.qml` provide persisted preferences and appearance configuration.
 - `popups/` and other QML components provide focused system controls.
 - `scripts/` contains the native C helpers (`update_theme`, `prgnotifier`); build them with `make`.
 - `docs/` contains feature-specific guides.
@@ -74,11 +74,11 @@ Hydrogen stores its state under `~/.local/state/quickshell-launcher` by default.
 
 ## Notifications and status messages
 
-The shell intentionally does not run a notification server or OSD. SwayNC owns desktop notifications, avoiding two applications competing for `org.freedesktop.Notifications`. Short status messages ("Bluetooth enabled", ...) are sent with `notify-send`, and Control Center → Notifications drives SwayNC through `swaync-client`.
+The shell intentionally does not run a notification server or OSD. SwayNC owns desktop notifications, avoiding two applications competing for `org.freedesktop.Notifications`. Short status messages ("Bluetooth enabled", ...) are sent with `notify-send`, and SwayNC can be controlled through `swaync-client`.
 
 ## Keyboard
 
-`Esc` closes whatever is open: bar popups, the launcher (first closes its action menu or confirmation) and the Control Center (first cancels a Wi-Fi password prompt). `quickshell ipc call popup close` does the same from a keybind.
+`Esc` closes whatever is open: bar popups, the launcher (first closes its action menu or confirmation) and the active launcher or popup. `quickshell ipc call popup close` does the same from a keybind.
 
 ## Requirements
 
@@ -104,7 +104,7 @@ make install
 
 ## Configuration and data
 
-- `Config.qml` defines the persisted settings (fonts, bar size and which modules show, `terminalCmd`) and the settings-file path. Every key is read somewhere in the shell; unknown keys in an old file are dropped on the next save.
+- `Config.qml` defines persisted preferences (fonts, bar size, visible modules, clock format and `terminalCmd`) and the preferences-file path. Every key is read somewhere in the shell; unknown keys in an old file are dropped on the next save.
 - User settings are stored at `~/.config/quickshell/settings.json`. Per-machine files (`settings.json`, `palette.json`, `bangs.json`) are git-ignored.
 - Launcher bangs and snippets are loaded from the Quickshell configuration directory.
 - Launcher state is stored at `~/.local/state/quickshell-launcher/state.json`.
