@@ -6,4 +6,3 @@ singleton Brightness 1.0 Brightness.qml
 singleton BluetoothPower 1.0 BluetoothPower.qml
 Bar 1.0 Bar.qml
 Launcher 1.0 Launcher.qml
-Settings 1.0 Settings.qml

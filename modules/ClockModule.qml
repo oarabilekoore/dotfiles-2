@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 import ".."
@@ -16,22 +17,40 @@ Rectangle {
 
     Process {
         id: tzProc
-        command: [Config.terminalCmd, "--class", "floating", "-e", "tzselect"]
+        command: [Config.terminalCmd, "-e", "tzselect"]
     }
 
-    // Ticks once a minute; the label below is bound to it, so no extra timer is needed.
     SystemClock {
         id: sysClock
         precision: SystemClock.Minutes
     }
 
     readonly property var dayNames: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+    readonly property var monthNames: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+
+    function ordinal(day) {
+        const mod100 = day % 100;
+        if (mod100 >= 11 && mod100 <= 13) return day + "th";
+        switch (day % 10) {
+        case 1: return day + "st";
+        case 2: return day + "nd";
+        case 3: return day + "rd";
+        default: return day + "th";
+        }
+    }
 
     readonly property string timeText: {
         const now = sysClock.date;
         const h = String(now.getHours()).padStart(2, "0");
         const m = String(now.getMinutes()).padStart(2, "0");
-        return root.dayNames[now.getDay()] + " " + h + ":" + m;
+        const time = h + ":" + m;
+        const weekday = root.dayNames[now.getDay()];
+
+        if (Config.clockFormat === "long")
+            return weekday + ", " + root.ordinal(now.getDate()) + " " + root.monthNames[now.getMonth()] + ", " + time;
+        if (Config.clockFormat === "time")
+            return time;
+        return weekday + " " + time;
     }
 
     Text {
@@ -44,6 +63,30 @@ Rectangle {
         color: Theme.foreground
     }
 
+    Menu {
+        id: formatMenu
+        title: "Date and time format"
+
+        MenuItem {
+            text: "Current  ·  Sunday 00:31"
+            checkable: true
+            checked: Config.clockFormat === "weekday"
+            onTriggered: Config.set("clockFormat", "weekday")
+        }
+        MenuItem {
+            text: "Long  ·  Sunday, 12th November, 00:31"
+            checkable: true
+            checked: Config.clockFormat === "long"
+            onTriggered: Config.set("clockFormat", "long")
+        }
+        MenuItem {
+            text: "Time only  ·  00:31"
+            checkable: true
+            checked: Config.clockFormat === "time"
+            onTriggered: Config.set("clockFormat", "time")
+        }
+    }
+
     MouseArea {
         id: mouseArea
         anchors.fill: parent
@@ -53,11 +96,9 @@ Rectangle {
 
         onClicked: (mouse) => {
             if (mouse.button === Qt.RightButton) {
-                tzProc.running = true;
-            } else {
-                if (parentBar) {
-                    parentBar.activePopup = (parentBar.activePopup === root.popupName ? "" : root.popupName);
-                }
+                formatMenu.popup();
+            } else if (parentBar) {
+                parentBar.activePopup = (parentBar.activePopup === root.popupName ? "" : root.popupName);
             }
         }
     }

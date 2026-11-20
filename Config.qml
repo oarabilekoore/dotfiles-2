@@ -3,12 +3,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-// User settings persisted to ~/.config/quickshell/settings.json.
-//
-// Every key below is read somewhere in the shell. Unknown keys in an old
-// settings.json are ignored and dropped on the next save, so settings that no
-// longer do anything can't linger. Add a key here only together with the code
-// that consumes it.
+// User preferences persisted to ~/.config/quickshell/settings.json.
 Singleton {
     id: root
 
@@ -16,12 +11,12 @@ Singleton {
     readonly property string configPath: configDir + "/settings.json"
     property bool isLoaded: false
 
-    // Appearance (Theme.qml)
+    // Appearance
     property string fontFamily: "JetBrainsMono Nerd Font Propo"
     property real fontScale: 1.0
     property int cornerRadius: 0
 
-    // Bar (Bar.qml / Theme.qml)
+    // Bar
     property int barHeight: 32
     property int barMargin: 0
     property bool showWorkspaces: true
@@ -33,6 +28,7 @@ Singleton {
     property bool showBluetooth: true
     property bool showBattery: true
     property bool showClock: true
+    property string clockFormat: "weekday"
 
     // Apps
     property string terminalCmd: "ghostty"
@@ -41,7 +37,7 @@ Singleton {
         "fontFamily", "fontScale", "cornerRadius",
         "barHeight", "barMargin",
         "showWorkspaces", "showMpris", "showDictation", "showCaffeine", "showTray",
-        "showNetwork", "showBluetooth", "showBattery", "showClock",
+        "showNetwork", "showBluetooth", "showBattery", "showClock", "clockFormat",
         "terminalCmd"
     ]
 
