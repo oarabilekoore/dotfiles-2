@@ -8,7 +8,6 @@ import "popups"
 PanelWindow {
     id: barWindow
 
-    // Required for multi-monitor Variants
     required property var modelData
     screen: modelData
 
@@ -29,28 +28,19 @@ PanelWindow {
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "quickshell"
 
-
     property var osd: null
     property var notificationCenter: null
-
-    // Active popup: "wifi", "volume", "bluetooth", "battery", "calendar", "mpris", "settings", "traymenu" or "".
-    // Popups dismiss themselves (focus loss) by clearing this.
     property string activePopup: ""
-
-    // Tray item whose menu the "traymenu" popup shows, and the icon it hangs under
     property var trayItem: null
     property var trayAnchor: null
 
-    // Click on empty bar space closes any popup
     MouseArea {
         anchors.fill: parent
         z: -1
         onClicked: barWindow.activePopup = ""
     }
 
-    // Rounded bar body with a subtle Geist-style border
     Rectangle {
-        id: barBg
         anchors.fill: parent
         z: -2
         radius: Theme.barRadius
@@ -59,7 +49,6 @@ PanelWindow {
         border.color: Theme.outline_variant
     }
 
-    // --- LEFT MODULES ---
     Row {
         id: leftModules
         anchors.left: parent.left
@@ -78,7 +67,6 @@ PanelWindow {
         DictationModule { visible: Config.showDictation }
     }
 
-    // --- CENTER MODULE (CLOCK) ---
     ClockModule {
         id: clockMod
         anchors.centerIn: parent
@@ -87,7 +75,6 @@ PanelWindow {
         visible: Config.showClock
     }
 
-    // --- RIGHT MODULES ---
     Row {
         id: rightModules
         anchors.right: parent.right
@@ -107,10 +94,7 @@ PanelWindow {
             visible: Config.showBluetooth
         }
 
-        CaffeineModule {
-            id: cafMod
-            visible: Config.showCaffeine
-        }
+        CaffeineModule { visible: Config.showCaffeine }
 
         NetworkModule {
             id: netMod
@@ -118,10 +102,7 @@ PanelWindow {
             visible: Config.showNetwork
         }
 
-        VolumeModule {
-            id: volMod
-            parentBar: barWindow
-        }
+        VolumeModule { id: volMod; parentBar: barWindow }
 
         BatteryModule {
             id: batMod
@@ -135,53 +116,70 @@ PanelWindow {
         }
     }
 
-    // --- POPUPS ---
-    WifiPopup {
-        parentBar: barWindow
-        anchorItem: netMod
-        visible: barWindow.activePopup === "wifi"
+    // Popup windows are expensive layer surfaces with their own object trees.
+    // Only the selected popup exists; closing it destroys its object tree.
+    LazyLoader {
+        active: barWindow.activePopup === "wifi"
+        WifiPopup {
+            parentBar: barWindow
+            anchorItem: netMod
+        }
     }
 
-    VolumePopup {
-        parentBar: barWindow
-        anchorItem: volMod
-        visible: barWindow.activePopup === "volume"
+    LazyLoader {
+        active: barWindow.activePopup === "volume"
+        VolumePopup {
+            parentBar: barWindow
+            anchorItem: volMod
+        }
     }
 
-    BluetoothPopup {
-        parentBar: barWindow
-        anchorItem: btMod
-        visible: barWindow.activePopup === "bluetooth"
+    LazyLoader {
+        active: barWindow.activePopup === "bluetooth"
+        BluetoothPopup {
+            parentBar: barWindow
+            anchorItem: btMod
+        }
     }
 
-    BatteryPopup {
-        parentBar: barWindow
-        anchorItem: batMod
-        visible: barWindow.activePopup === "battery"
+    LazyLoader {
+        active: barWindow.activePopup === "battery"
+        BatteryPopup {
+            parentBar: barWindow
+            anchorItem: batMod
+        }
     }
 
-    TrayMenuPopup {
-        parentBar: barWindow
-        anchorItem: barWindow.trayAnchor
-        visible: barWindow.activePopup === "traymenu"
+    LazyLoader {
+        active: barWindow.activePopup === "traymenu"
+        TrayMenuPopup {
+            parentBar: barWindow
+            anchorItem: barWindow.trayAnchor
+        }
     }
 
-    SettingsPopup {
-        parentBar: barWindow
-        anchorItem: setMod
-        visible: barWindow.activePopup === "settings"
+    LazyLoader {
+        active: barWindow.activePopup === "settings"
+        SettingsPopup {
+            parentBar: barWindow
+            anchorItem: setMod
+        }
     }
 
-    CalendarPopup {
-        parentBar: barWindow
-        anchorItem: clockMod
-        visible: barWindow.activePopup === "calendar"
+    LazyLoader {
+        active: barWindow.activePopup === "calendar"
+        CalendarPopup {
+            parentBar: barWindow
+            anchorItem: clockMod
+        }
     }
 
-    MprisPopup {
-        parentBar: barWindow
-        anchorItem: mprisMod
-        player: mprisMod.activePlayer
-        visible: barWindow.activePopup === "mpris"
+    LazyLoader {
+        active: barWindow.activePopup === "mpris"
+        MprisPopup {
+            parentBar: barWindow
+            anchorItem: mprisMod
+            player: mprisMod.activePlayer
+        }
     }
 }
