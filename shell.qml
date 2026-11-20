@@ -95,8 +95,6 @@ ShellRoot {
 
     LazyLoader {
         id: settingsLoader
-        active: false
-
         Settings {
             osd: null
             notificationCenter: null
@@ -113,8 +111,6 @@ ShellRoot {
 
     LazyLoader {
         id: launcherLoader
-        active: false
-
         Launcher {}
 
         onActiveChanged: {
