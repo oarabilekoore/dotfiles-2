@@ -93,17 +93,35 @@ Row {
         width: root.expanderWidth
         height: Theme.barHeight
 
-        Text {
+        Item {
             anchors.centerIn: parent
-            text: "⌄"
-            font.family: Theme.fontFamily
-            font.pixelSize: 19
-            font.bold: true
-            color: Theme.foreground
-            rotation: root.expanded ? 180 : 0
+            width: 16
+            height: 16
 
-            Behavior on rotation {
-                NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
+            // Compact tray glyph: an outlined container with three app dots.
+            Rectangle {
+                anchors.fill: parent
+                anchors.margins: 1
+                radius: 3
+                color: "transparent"
+                border.width: 1.4
+                border.color: Theme.foreground
+            }
+
+            Row {
+                anchors.centerIn: parent
+                spacing: 2
+
+                Repeater {
+                    model: 3
+                    delegate: Rectangle {
+                        required property int index
+                        width: 2.5
+                        height: 2.5
+                        radius: 1.25
+                        color: Theme.foreground
+                    }
+                }
             }
         }
 
