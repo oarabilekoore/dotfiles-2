@@ -5,7 +5,7 @@ Personal Linux desktop configuration built around **Hyprland** and **Quickshell*
 ## Overview
 
 - `shell.qml` is the shell entry point. It creates the bar instances, launcher, settings window, and IPC handlers.
-- `Bar.qml` and related components provide the panel and status indicators.
+- `Bar.qml` and related components provide the panel and status indicators. Heavy popup windows, the launcher, and the control center are lazy-loaded and released after closing to reduce idle memory.
 - `Launcher.qml` provides application/command search, hybrid file and image search, clipboard history, emoji selection, snippets, calculator and unit conversion, configurable bangs, and file OCR.
 - `Settings.qml`, `Config.qml`, and `Theme.qml` provide settings and appearance controls.
 - `popups/` and other QML components provide focused system controls.

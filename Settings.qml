@@ -350,13 +350,6 @@ PanelWindow {
         else present(destination);
     }
 
-    Component.onCompleted: {
-        root.refreshDevices();
-        root.refreshNotificationsNow();
-        root.refreshPortalStatus();
-        root.refreshAbout();
-    }
-
     // ------------------------------------------------------------------ UI
     Rectangle {
         anchors.fill: parent

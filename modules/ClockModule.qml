@@ -73,7 +73,7 @@ Rectangle {
 
     // Refresh every minute
     Timer {
-        interval: 10000
+        interval: 60000
         running: true
         repeat: true
         onTriggered: clockText.text = root.formatTime()
