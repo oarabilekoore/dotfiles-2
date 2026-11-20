@@ -119,7 +119,7 @@ PanelWindow {
     // Popup windows are expensive layer surfaces with their own object trees.
     // Only the selected popup exists; closing it destroys its object tree.
     LazyLoader {
-        active: barWindow.activePopup === "wifi"
+        activeAsync: barWindow.activePopup === "wifi"
         WifiPopup {
             parentBar: barWindow
             anchorItem: netMod
@@ -127,7 +127,7 @@ PanelWindow {
     }
 
     LazyLoader {
-        active: barWindow.activePopup === "volume"
+        activeAsync: barWindow.activePopup === "volume"
         VolumePopup {
             parentBar: barWindow
             anchorItem: volMod
@@ -135,7 +135,7 @@ PanelWindow {
     }
 
     LazyLoader {
-        active: barWindow.activePopup === "bluetooth"
+        activeAsync: barWindow.activePopup === "bluetooth"
         BluetoothPopup {
             parentBar: barWindow
             anchorItem: btMod
@@ -143,7 +143,7 @@ PanelWindow {
     }
 
     LazyLoader {
-        active: barWindow.activePopup === "battery"
+        activeAsync: barWindow.activePopup === "battery"
         BatteryPopup {
             parentBar: barWindow
             anchorItem: batMod
@@ -151,7 +151,7 @@ PanelWindow {
     }
 
     LazyLoader {
-        active: barWindow.activePopup === "traymenu"
+        activeAsync: barWindow.activePopup === "traymenu"
         TrayMenuPopup {
             parentBar: barWindow
             anchorItem: barWindow.trayAnchor
@@ -159,7 +159,7 @@ PanelWindow {
     }
 
     LazyLoader {
-        active: barWindow.activePopup === "settings"
+        activeAsync: barWindow.activePopup === "settings"
         SettingsPopup {
             parentBar: barWindow
             anchorItem: setMod
@@ -167,7 +167,7 @@ PanelWindow {
     }
 
     LazyLoader {
-        active: barWindow.activePopup === "calendar"
+        activeAsync: barWindow.activePopup === "calendar"
         CalendarPopup {
             parentBar: barWindow
             anchorItem: clockMod
@@ -175,7 +175,7 @@ PanelWindow {
     }
 
     LazyLoader {
-        active: barWindow.activePopup === "mpris"
+        activeAsync: barWindow.activePopup === "mpris"
         MprisPopup {
             parentBar: barWindow
             anchorItem: mprisMod
