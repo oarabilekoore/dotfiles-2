@@ -110,10 +110,6 @@ PanelWindow {
             visible: Config.showBattery
         }
 
-        SettingsModule {
-            id: setMod
-            parentBar: barWindow
-        }
     }
 
     // Popup windows are expensive layer surfaces with their own object trees.
@@ -155,14 +151,6 @@ PanelWindow {
         TrayMenuPopup {
             parentBar: barWindow
             anchorItem: barWindow.trayAnchor
-        }
-    }
-
-    LazyLoader {
-        activeAsync: barWindow.activePopup === "settings"
-        SettingsPopup {
-            parentBar: barWindow
-            anchorItem: setMod
         }
     }
 
