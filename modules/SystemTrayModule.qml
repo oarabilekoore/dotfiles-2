@@ -14,7 +14,7 @@ Row {
     readonly property int expanderWidth: 24
 
     spacing: 0
-    visible: SystemTray.items.count > 0
+    visible: activeRepeater.count > 0
 
     // Shared tray entry used by both status groups. Passive entries are placed
     // after active and attention-seeking entries, regardless of registration order.
@@ -115,9 +115,9 @@ Row {
 
     // Active and NeedsAttention icons stay at the front.
     Repeater {
+        id: activeRepeater
         model: SystemTray.items
         delegate: TrayEntry {
-            required property var modelData
             passiveGroup: false
         }
     }
@@ -126,7 +126,6 @@ Row {
     Repeater {
         model: SystemTray.items
         delegate: TrayEntry {
-            required property var modelData
             passiveGroup: true
         }
     }
