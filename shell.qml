@@ -30,7 +30,6 @@ ShellRoot {
         else if (action === "reindex") target.rebuildFileCache(true);
         else if (action === "reloadConfig") {
             target.loadBangConfig();
-            target.loadSnippets();
         }
     }
 
