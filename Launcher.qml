@@ -6,7 +6,7 @@ import Quickshell.Io
 import Quickshell.Hyprland
 import "."
 
-// Launcher: apps, hybrid sparse-vector+FTS5 file & image search, rich previews, clipboard + OCR,
+// Launcher: apps, hybrid lexical/semantic file & image search, rich previews, clipboard, and file OCR,
 // emoji, snippets, calculator, unit conversion, configurable !bangs, and dmenu IPC.
 //
 //   quickshell ipc call launcher toggle <all|files|clipboard|emoji|snippets|hidden>
@@ -71,7 +71,9 @@ PanelWindow {
         { id: "qs",        title: "Quick Settings",                    kw: "settings quick panel",                        glyph: "󰒓", cmd: ["quickshell", "ipc", "call", "popup", "toggle", "settings"] },
         { id: "wifi",      title: "Network Manager",                   kw: "wifi wi-fi network nmtui",                    glyph: "󰖩", cmd: ["ghostty", "-o", "shell_integration=no-title", "-T", "nmtui", "nmtui"] },
         { id: "reidx",     title: "Refresh File & Vector Index",       kw: "reindex refresh files vector fts5 cache",       glyph: "󰑓", keepOpen: true, fn: () => root.rebuildFileCache(true) },
-        { id: "reidx-img", title: "Index Images (OCR + Vision Captions)", kw: "reindex images ocr vision captions photos",   glyph: "󰋩", keepOpen: true, fn: () => root.rebuildImageIndex() },
+        { id: "reidx-img", title: "Index Images (Rust OCR + Vision)", kw: "reindex images ocr vision captions photos", glyph: "󰋩", keepOpen: true, fn: () => root.rebuildImageIndex() },
+        { id: "semantic", title: "Build Semantic & Visual Index", kw: "semantic vector embeddings minilm clip visual search", glyph: "󰍉", keepOpen: true, fn: () => root.buildSemanticIndex() },
+        { id: "semantic-off", title: "Disable Semantic & Visual Search", kw: "disable semantic vector embeddings visual search", glyph: "󰍉", keepOpen: true, fn: () => root.disableSemanticSearch() },
         { id: "m-hidden",  title: "Show Hidden Apps",                  kw: "hidden unhide apps invisible",                glyph: "󰈉", mode: "hidden" },
         { id: "m-files",   title: "Search Files",                      kw: "files find search vector content",            glyph: "󰈔", mode: "files" },
         { id: "m-clip",    title: "Clipboard History",                 kw: "clipboard history paste copy",             glyph: "󰅌", mode: "clipboard" },
@@ -112,6 +114,8 @@ PanelWindow {
     property double fileCacheTime: 0
     property bool fileIndexing: false
     property bool imageIndexing: false
+    property bool semanticSearchEnabled: false
+    property bool semanticSetupRunning: false
     property var contentResults: []
     property string contentQuery: ""
     property int contentSearchSeq: 0
@@ -177,12 +181,13 @@ PanelWindow {
                     emoji: s.emoji || [],
                     hidden: Array.isArray(s.hidden) ? s.hidden : []
                 };
+                root.semanticSearchEnabled = s.semantic === true;
             } catch (e) { /* first run */ }
         });
     }
 
     function saveStore() {
-        sh("mkdir -p \"$1\" && printf '%s' \"$2\" > \"$1/state.json\"", [stateDir, JSON.stringify(store)]);
+        sh("mkdir -p \"$1\" && printf '%s' \"$2\" > \"$1/state.json\"", [stateDir, JSON.stringify({ apps: store.apps, emoji: store.emoji, hidden: store.hidden, semantic: semanticSearchEnabled })]);
     }
 
     function bumpApp(id) {
@@ -273,7 +278,10 @@ PanelWindow {
         if (!force && cachedFiles.length > 0 && (now - fileCacheTime) < 600000) return;
 
         fileIndexing = true;
-        runCapture([hydrogenBin, "index", "sync"], function (syncOut) {
+        const syncCommand = semanticSearchEnabled
+            ? ["sh", "-c", "HYDROGEN_EMBEDDINGS=1 \"$1\" index sync", "_", hydrogenBin]
+            : [hydrogenBin, "index", "sync"];
+        runCapture(syncCommand, function (syncOut) {
             try {
                 const info = JSON.parse(syncOut);
                 if (info && info.image_worker_started) root.imageIndexing = true;
@@ -292,10 +300,63 @@ PanelWindow {
     function rebuildImageIndex() {
         if (imageIndexing) return;
         imageIndexing = true;
-        runCapture([hydrogenBin, "index", "sync-images"], function (_out) {
+        const command = semanticSearchEnabled
+            ? ["sh", "-c", "HYDROGEN_EMBEDDINGS=1 \"$1\" index sync-images", "_", hydrogenBin]
+            : [hydrogenBin, "index", "sync-images"];
+        runCapture(command, function (_out) {
             root.imageIndexing = false;
             if ((root.mode === "files" || root.mode === "all") && root.query.trim().length >= 2) {
                 root.requestContentSearch();
+            }
+        });
+    }
+
+    function buildSemanticIndex() {
+        if (semanticSetupRunning) return;
+        semanticSetupRunning = true;
+        fileIndexing = true;
+        const script = "HYDROGEN_EMBEDDINGS=1 \"$1\" index sync && HYDROGEN_EMBEDDINGS=1 \"$1\" index embed";
+        runCapture(["sh", "-c", script, "_", hydrogenBin], function (raw) {
+            root.semanticSetupRunning = false;
+            root.fileIndexing = false;
+            const lines = String(raw || "").trim().split(/\r?\n/).filter(line => line.length > 0);
+            let summary = null;
+            try { summary = lines.length > 0 ? JSON.parse(lines[lines.length - 1]) : null; } catch (e) {}
+            if (!summary || summary.status !== "done") {
+                console.warn("launcher: semantic index setup did not complete:", raw);
+                return;
+            }
+            root.semanticSearchEnabled = true;
+            root.saveStore();
+            root.fileCacheTime = 0;
+            root.runCapture(["cat", root.fileCachePath], function (contents) {
+                root.cachedFiles = String(contents || "").split("\n").filter(line => line.length > 0);
+                root.fileCacheTime = Date.now();
+                if (root.query.trim().length >= 2) root.requestContentSearch();
+            });
+        });
+    }
+
+    function disableSemanticSearch() {
+        semanticSearchEnabled = false;
+        contentResults = [];
+        contentQuery = "";
+        saveStore();
+        if (query.trim().length >= 2) requestContentSearch();
+    }
+
+    function requestImageSearch(imagePath) {
+        if (!semanticSearchEnabled || !imagePath) return;
+        const seq = ++contentSearchSeq;
+        runCapture([hydrogenBin, "query", "--image", String(imagePath), "--limit", "25"], function (raw) {
+            if (seq !== root.contentSearchSeq) return;
+            try {
+                const parsed = JSON.parse(raw);
+                root.contentResults = Array.isArray(parsed) ? parsed : [];
+                root.contentQuery = root.query.trim();
+            } catch (e) {
+                root.contentResults = [];
+                console.warn("launcher: visual search returned invalid JSON:", e);
             }
         });
     }
@@ -308,7 +369,9 @@ PanelWindow {
             return;
         }
         const seq = ++contentSearchSeq;
-        runCapture([hydrogenBin, "query", q, "--limit", "25"], function (raw) {
+        const args = [hydrogenBin, "query", q, "--limit", "25"];
+        if (semanticSearchEnabled) args.push("--semantic");
+        runCapture(args, function (raw) {
             if (seq !== root.contentSearchSeq) return;
             root.contentQuery = q;
             try {
@@ -1210,11 +1273,11 @@ PanelWindow {
         };
     }
 
-    function ocrImageFile(filePath, engine) {
+    function ocrImageFile(filePath, math) {
         if (!filePath) return;
         const args = [hydrogenBin, "ocr", "file", String(filePath)];
         if (root.previousWindowAddress) args.push("--window", root.previousWindowAddress);
-        if (engine) args.push("--engine", engine);
+        if (math) args.push("--math");
         Quickshell.execDetached(args);
     }
 
@@ -1262,10 +1325,12 @@ PanelWindow {
         }
         if (!isDir && isImageName(name)) {
             acts.push(
-                { label: "OCR to Markdown (Math + Text)", run: () => root.ocrImageFile(p) },
-                { label: "OCR Handwriting (TrOCR)", run: () => root.ocrImageFile(p, "handwriting") },
-                { label: "OCR with RapidOCR (Legacy)", run: () => root.ocrImageFile(p, "rapid") }
+                { label: "Extract Printed Text (Rust OCR)", run: () => root.ocrImageFile(p, false) },
+                { label: "Recognise Formula as LaTeX", run: () => root.ocrImageFile(p, true) }
             );
+            if (semanticSearchEnabled) {
+                acts.push({ label: "Find Visually Similar Images", run: () => root.requestImageSearch(p) });
+            }
         }
         acts.push(
             { label: "Copy Path", run: () => Quickshell.execDetached(["wl-copy", p]) },
@@ -1274,13 +1339,13 @@ PanelWindow {
         return acts;
     }
 
-    // ---- hybrid file & image search (Sparse TF-IDF Vector + FTS5/BM25 + Filename Cache)
+    // ---- hybrid file & image search (lexical + MiniLM + CLIP + filename cache)
     function fileItemsFromCache(terms, limit) {
         const out = [];
         const seen = {};
         const qTrim = query.trim();
 
-        // 1. Sparse Vector + FTS5/BM25 content & image OCR/caption matches ranked higher
+        // 1. Hydrogen's lexical + MiniLM + CLIP ranked content and image matches
         if (terms.length > 0 && contentQuery === qTrim && contentResults.length > 0) {
             for (let i = 0; i < contentResults.length; i++) {
                 const cr = contentResults[i];

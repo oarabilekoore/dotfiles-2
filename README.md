@@ -4,34 +4,28 @@ Personal Linux desktop configuration built around **Hyprland** and **Quickshell*
 
 ## Overview
 
-The Quickshell interface is organised around a small set of top-level QML components:
-
 - `shell.qml` is the shell entry point. It creates the bar instances, launcher, settings window, and IPC handlers.
-- `Bar.qml` and the related components provide the panel and status indicators.
-- `Launcher.qml` provides application/command search, file search, clipboard history, emoji selection, snippets, calculator and unit conversion, configurable bangs, and OCR actions.
-- `Settings.qml`, `Config.qml`, and `Theme.qml` provide the settings and appearance system, including per-module bar visibility controls.
+- `Bar.qml` and related components provide the panel and status indicators.
+- `Launcher.qml` provides application/command search, hybrid file and image search, clipboard history, emoji selection, snippets, calculator and unit conversion, configurable bangs, and file OCR.
+- `Settings.qml`, `Config.qml`, and `Theme.qml` provide settings and appearance controls.
 - `popups/` and other QML components provide focused system controls.
 - `scripts/` contains helper utilities used by the desktop.
 - `docs/` contains feature-specific guides.
 
-## Main features
-
-### Launcher
-
-The launcher supports several modes:
+## Launcher
 
 | Mode | Shortcut | Purpose |
 | --- | --- | --- |
-| All | `Alt+1` | Search apps, commands, files, snippets, and web bangs |
+| All | `Alt+1` | Search apps, commands, file contents, snippets and web bangs |
 | Files | `Alt+2` | Search filenames and indexed document/image content |
-| Clipboard | `Alt+3` | Browse `cliphist` history, preview entries, and OCR images |
+| Clipboard | `Alt+3` | Browse, preview, copy and paste cliphist entries |
 | Emoji | `Alt+4` | Search and paste emoji |
 | Snippets | `Alt+5` | Search and expand text templates |
 | Hidden apps | Launcher action | View and unhide hidden desktop entries |
 
-In All mode, the first-character sigils switch directly to a mode: `/` for Files, `;` for Clipboard, `'` for Emoji, and `,` for Snippets. The launcher also supports shell execution with `>`, calculator expressions with `=`, and configurable `!` bangs.
+In All mode, `/`, `;`, `'`, and `,` switch to Files, Clipboard, Emoji, and Snippets. The launcher also supports shell execution with `>`, calculator expressions with `=`, and configurable `!` bangs.
 
-The launcher can be controlled over Quickshell IPC:
+Quickshell IPC:
 
 ```sh
 quickshell ipc call launcher toggle all
@@ -40,27 +34,49 @@ quickshell ipc call launcher reindex
 quickshell ipc call launcher reloadConfig
 ```
 
+## Hydrogen integration
+
+Hydrogen provides the local Rust backend for indexing, content search, visual retrieval and OCR. The launcher expects hydrogen on PATH.
+
+- `hydrogen index sync` synchronises files and starts eligible image indexing.
+- `hydrogen query QUERY --limit 25` performs lexical search.
+- After enabling semantic indexing, the launcher adds `--semantic` to text queries. Hydrogen fuses lexical results with MiniLM document vectors and CLIP cross-modal image vectors.
+- Image-file results expose **Find Visually Similar Images**, backed by `hydrogen query --image PATH --limit 25`.
+- **Index Images (Rust OCR + Vision)** runs `hydrogen index sync-images`.
+
+### Enable semantic and visual search
+
+Semantic indexing is deliberately opt-in. In the launcher, choose **Build Semantic & Visual Index**. This runs:
+
+```sh
+HYDROGEN_EMBEDDINGS=1 hydrogen index sync
+HYDROGEN_EMBEDDINGS=1 hydrogen index embed
+```
+
+This downloads the local MiniLM and CLIP models, backfills vectors for existing documents and images, and stores the enabled state in the launcher state file. It can use additional CPU and RAM during the initial backfill. Once enabled, future launcher syncs keep embeddings updated. Search inference remains local.
+
+To disable semantic search and future embedding updates, choose **Disable Semantic & Visual Search** in the launcher. Existing vectors and downloaded model files are retained.
+
 ### OCR
 
-The launcher delegates OCR to the Hydrogen backend:
+The launcher uses Hydrogen's Rust-native OCR commands:
 
-- Press `Ctrl+O` on an image in Clipboard mode to recognise a clipboard image.
-- Use the image action **OCR to Markdown** in Files mode to recognise an image file.
-- The result is copied as plain-text Markdown and can be pasted into the previously focused window.
+- **Extract Printed Text (Rust OCR)** runs `hydrogen ocr file PATH`.
+- **Recognise Formula as LaTeX** runs `hydrogen ocr file PATH --math`.
+- `Ctrl+O` runs printed-text OCR on the selected image file.
+- Hydrogen copies and pastes the result into the previously focused window.
 
-Hydrogen now provides three on-demand OCR engines: Pix2Text for mixed text and mathematical formulas (with LaTeX output), TrOCR Small Handwritten for handwritten English lines, and RapidOCR as a legacy fallback. The default launcher action uses Pix2Text. To run handwriting recognition explicitly, use `hydrogen ocr file /path/to/note.png --engine handwriting` or `hydrogen ocr clip CLIPHIST_ID --engine handwriting`. Install the interactive models once from the Hydrogen checkout with `make install && make ocr-deps`. Model weights are downloaded on first use and cached locally. See the [Hydrogen OCR guide](https://github.com/oarabilekoore/hydrogen#ocr-runtime).
+Clipboard images remain available for preview, copying and pasting. Clipboard-image OCR actions are intentionally not exposed. General handwritten prose does not yet have a dedicated handwriting model. See [Hydrogen model setup](https://github.com/oarabilekoore/hydrogen/blob/main/docs/MODELS.md) for supported formats and limitations.
 
-### File and image search
+## Index state and searchable roots
 
-The launcher calls Hydrogen for content search and index maintenance. The backend maintains its state under `~/.local/state/quickshell-launcher` by default. The searchable roots include Documents, Downloads, Pictures, Videos, and Projects.
+Hydrogen stores its state under `~/.local/state/quickshell-launcher` by default. Search roots include Documents, Downloads, Pictures, Videos, and Projects. The launcher caches filenames in `file-index.txt` and watches `index.rev` while open, refreshing its cache and active search after a completed sync.
 
-### Notifications and OSD
+## Notifications and OSD
 
 The current shell configuration intentionally does not instantiate a Quickshell notification server or OSD. SwayNC owns desktop notifications, avoiding two applications competing for `org.freedesktop.Notifications`.
 
 ## Requirements
-
-This configuration is intended for a Linux Wayland desktop. The exact package set depends on which features are enabled, but the repository currently integrates with:
 
 - Hyprland
 - Quickshell and Qt Quick
@@ -70,24 +86,20 @@ This configuration is intended for a Linux Wayland desktop. The exact package se
 - `hyprctl` for Hyprland control
 - `xdg-open` and standard desktop utilities
 
-Additional commands and integrations are invoked by individual settings, launcher actions, and scripts.
-
 ## Installation
 
-This repository is a collection of desktop configuration files rather than a universal installer. Review the files and adapt paths and dependencies to your system before deploying them.
+This repository is a collection of desktop configuration files rather than a universal installer. Review the files and adapt paths and dependencies before deploying them.
 
-The shell entry point is `shell.qml`. Quickshell should be configured to load the repository's shell entry point, with the repository's QML modules and supporting data kept together.
-
-Hydrogen must be installed and available on `PATH` for launcher indexing, content search, and OCR actions to work.
+The shell entry point is `shell.qml`. Quickshell should load the repository's shell entry point, with the repository's QML modules and supporting data kept together. Hydrogen must be installed and available on PATH.
 
 ## Configuration and data
 
 - `Config.qml` defines defaults, persisted settings, and the settings-file path.
 - User settings are stored at `~/.config/quickshell/settings.json`.
 - Launcher bangs and snippets are loaded from the Quickshell configuration directory.
-- `docs/` contains focused documentation for launcher, bangs, and notifications.
+- Launcher state is stored at `~/.local/state/quickshell-launcher/state.json`.
 
-Do not commit personal tokens, API keys, private paths, or machine-specific secrets to this repository.
+Do not commit personal tokens, API keys, private paths, or machine-specific secrets.
 
 ## Documentation
 
@@ -97,7 +109,7 @@ Do not commit personal tokens, API keys, private paths, or machine-specific secr
 
 ## Related project
 
-[Hydrogen](https://github.com/oarabilekoore/hydrogen) provides the launcher’s indexing, content-search and OCR commands. Its model/runtime requirements and supported operations are documented in the Hydrogen repository.
+[Hydrogen](https://github.com/oarabilekoore/hydrogen) provides the launcher's indexing, hybrid search and OCR commands. Model setup and supported OCR capabilities are documented in its repository.
 
 ## License
 
