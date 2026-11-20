@@ -21,6 +21,9 @@ PanelWindow {
     // Edges.Right -> popup grows to the right of the module (left edges aligned)
     // neither     -> centred under the module
     property int popupGravity: Edges.Bottom | Edges.Left
+    // Escape closes the popup. A subclass with its own Escape behaviour (e.g. cancelling a
+    // password prompt) binds this to false while that behaviour is active.
+    property bool escapeCloses: true
 
     screen: parentBar ? parentBar.screen : null
 
@@ -37,7 +40,9 @@ PanelWindow {
 
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "quickshell-popup"
-    WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+    // Exclusive while open so the popup reliably receives Escape; the focus grab below
+    // still releases it as soon as you click anywhere outside.
+    WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
     function reposition() {
         if (!anchorItem || !parentBar) return;
@@ -64,6 +69,12 @@ PanelWindow {
     function dismiss() {
         if (root.parentBar && root.parentBar.activePopup === root.popupName)
             root.parentBar.activePopup = "";
+    }
+
+    Shortcut {
+        sequence: "Escape"
+        enabled: root.visible && root.escapeCloses
+        onActivated: root.dismiss()
     }
 
     // Clicks inside the popup or on the bar are kept; anything else clears the grab.

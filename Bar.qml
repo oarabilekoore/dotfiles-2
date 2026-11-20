@@ -28,8 +28,6 @@ PanelWindow {
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "quickshell"
 
-    property var osd: null
-    property var notificationCenter: null
     property string activePopup: ""
     property var trayItem: null
     property var trayAnchor: null
@@ -75,7 +73,6 @@ SystemTrayModule {
         id: clockMod
         anchors.centerIn: parent
         parentBar: barWindow
-        osd: barWindow.osd
         visible: Config.showClock
     }
 

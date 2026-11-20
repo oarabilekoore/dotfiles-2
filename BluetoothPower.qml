@@ -38,7 +38,7 @@ Singleton {
     }
 
     function showStatus(message) {
-        Quickshell.execDetached(["quickshell", "ipc", "call", "osd", "status", message]);
+        Notify.status(message);
     }
 
     function enable() {

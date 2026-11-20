@@ -36,7 +36,7 @@ PopupBase {
         id: setProfileProc
         onExited: {
             getProfileProc.running = true;
-            Quickshell.execDetached(["quickshell", "ipc", "call", "osd", "status", "Power profile updated"]);
+            Notify.status("Power profile updated");
         }
     }
 

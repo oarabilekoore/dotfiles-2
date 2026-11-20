@@ -1,0 +1,15 @@
+build/
+__pycache__/
+*.pyc
+*.bak
+*.backup
+*.swp
+
+# Per-machine files: written at runtime or generated from your wallpaper.
+# If they are still tracked, stop tracking them without deleting your copies:
+#   git rm --cached settings.json palette.json bangs.json
+# (bangs.json is created from data/bangs.json on first launch; Theme.qml has built-in
+#  colours, so a missing palette.json is fine.)
+settings.json
+palette.json
+bangs.json

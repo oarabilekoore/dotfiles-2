@@ -7,7 +7,7 @@ This shell uses Quickshell's `LazyLoader` for expensive windows and popup trees.
 - The main launcher is created on its first IPC open and destroyed 2.2 seconds after it closes. The short grace period allows the close animation to finish and avoids destroying it during a quick reopen.
 - The full settings/control-center window is created on demand and destroyed 1.4 seconds after closing.
 - Each bar popup (Wi-Fi, Bluetooth, volume, battery, tray menu, compact settings, calendar, and media controls) exists only while that popup is selected. Closing it releases its QML object tree and its service bindings.
-- The clock text refreshes once per minute rather than every ten seconds.
+- The clock label is bound to a minute-precision `SystemClock` (no timer of its own), and the Caffeine indicator watches its flag file instead of spawning a process every few seconds.
 
 ## Behaviour and trade-offs
 

@@ -1,4 +1,4 @@
-# Notifications and OSD
+# Notifications and status toasts
 
 This configuration deliberately delegates desktop notifications to **SwayNC**.
 Quickshell does not instantiate a `NotificationServer`, so it does not compete
@@ -8,10 +8,13 @@ with SwayNC for the session's `org.freedesktop.Notifications` D-Bus name.
 
 - **SwayNC** owns desktop notifications and the notification centre.
 - **Quickshell** provides the bar, launcher and control centre.
-- The Quickshell OSD is disabled in the current shell entry point. Volume,
-  brightness and other helper scripts may still invoke their configured
-  external OSD integration, but this repository does not create a competing
-  Quickshell OSD surface.
+- Short status messages from the shell ("Bluetooth enabled", "Power profile
+  updated") are sent through `notify-send`, so SwayNC displays them like any
+  other notification (`Notify.qml`). There is no separate Quickshell OSD.
+- Volume and brightness feedback comes from `scripts/prgnotifier.c`, which also
+  talks to SwayNC.
+- Control Center → Notifications drives SwayNC through `swaync-client`
+  (Do Not Disturb, dismiss all).
 
 Do not enable a second notification server while SwayNC is running. D-Bus
 notification ownership is exclusive; two daemons cannot both own the same

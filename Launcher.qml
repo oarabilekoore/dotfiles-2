@@ -44,7 +44,7 @@ PanelWindow {
 
     readonly property var modeOrder: ["all", "files", "clipboard", "emoji", "snippets"]
     readonly property var modeMeta: ({
-        all:       { label: "All",       glyph: "󰍉", hint: "Search apps, file contents, snippets (,hdr), or !sl / !sh / !yt / !hister…" },
+        all:       { label: "All",       glyph: "󰍉", hint: "Search apps, file contents, snippets (,hdr), or !sl / !sh / !yt…" },
         files:     { label: "Files",     glyph: "󰈔", hint: "Search filenames, document contents & image OCR/captions…" },
         clipboard: { label: "Clipboard", glyph: "󰅌", hint: "Search clipboard history (Del delete, Ctrl+D clear)…" },
         emoji:     { label: "Emoji",     glyph: "󰞅", hint: "Search emoji…" },
@@ -971,7 +971,7 @@ PanelWindow {
         const bang = findBang(name);
         if (!bang) {
             return [{ key: "bang-unknown:" + name, section: "Bangs", title: "Unknown bang: !" + name,
-                      subtitle: "Edit ~/.config/quickshell/bangs.json to add it. Try !sl, !sh, !yt or !hister.", glyph: "󰋔", badge: "Help", hits: [],
+                      subtitle: "Edit ~/.config/quickshell/bangs.json to add it. Try !sl, !sh or !yt.", glyph: "󰋔", badge: "Help", hits: [],
                       actions: [{ label: "Open launcher documentation", run: () => root.openUrl("file://" + Quickshell.shellPath("docs/LAUNCHER.md")) }] }];
         }
         if (bang.type === "cmd" || bang.type === "command") {
@@ -988,18 +988,24 @@ PanelWindow {
                     actions: [{ label: "Type arguments", keepOpen: true, run: () => {} }]
                 }];
             }
-            const resolvedCmd = hasPlaceholder ? rawCmd.replace(/\{query\}/g, body) : (body ? rawCmd + " " + body : rawCmd);
+            // The query is passed to the shell as a positional argument ("$1") and is never
+            // spliced into the script text, so `!bang foo; rm -rf ~` cannot run extra commands.
+            // (Use a bare {query} in the template; inside single quotes "$1" stays literal.)
+            const script = hasPlaceholder ? rawCmd.replace(/\{query\}/g, () => '"$1"') : (body ? rawCmd + ' "$1"' : rawCmd);
+            const quoted = "'" + body.replace(/'/g, "'\\''") + "'";
+            // Display / clipboard form only: the query shell-quoted into the command.
+            const shownCmd = hasPlaceholder ? rawCmd.replace(/\{query\}/g, () => quoted) : (body ? rawCmd + " " + quoted : rawCmd);
             const label = bang.label || name;
             return [{
-                key: "bang-cmd:" + name + ":" + resolvedCmd,
+                key: "bang-cmd:" + name + ":" + shownCmd,
                 section: label,
                 title: label + (body && !hasPlaceholder ? " (" + body + ")" : ""),
-                subtitle: "$ " + resolvedCmd,
+                subtitle: "$ " + shownCmd,
                 glyph: "󰆍", badge: "Command", hits: [],
                 actions: [
-                    { label: "Run " + label, confirm: !!bang.confirm, run: () => Quickshell.execDetached(["sh", "-c", resolvedCmd]) },
-                    { label: "Run in Terminal", confirm: !!bang.confirm, run: () => Quickshell.execDetached([root.terminal, "-e", "sh", "-c", resolvedCmd + "; echo; printf 'Press Enter to close…'; read _"]) },
-                    { label: "Copy Command", run: () => Quickshell.execDetached(["wl-copy", resolvedCmd]) }
+                    { label: "Run " + label, confirm: !!bang.confirm, run: () => Quickshell.execDetached(["sh", "-c", script, "_", body]) },
+                    { label: "Run in Terminal", confirm: !!bang.confirm, run: () => Quickshell.execDetached([root.terminal, "-e", "sh", "-c", script + "; echo; printf 'Press Enter to close…'; read _", "_", body]) },
+                    { label: "Copy Command", run: () => Quickshell.execDetached(["wl-copy", shownCmd]) }
                 ]
             }];
         }

@@ -83,6 +83,7 @@ Singleton {
         id: paletteFile
         path: Quickshell.shellPath("palette.json")
         watchChanges: true
+        printErrors: false   // palette.json is generated; the built-in colours cover a fresh install
         onFileChanged: reload()
         onLoaded: root.loadPalette(text())
     }

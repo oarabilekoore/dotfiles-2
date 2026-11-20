@@ -46,17 +46,6 @@
     "description": "Power off the system"
   },
   {
-    "bang": "hister",
-    "aliases": [
-      "h",
-      "his"
-    ],
-    "label": "Hister",
-    "type": "url",
-    "template": "http://127.0.0.1:4433/?q={query}",
-    "emptyUrl": "http://127.0.0.1:4433/"
-  },
-  {
     "bang": "yt",
     "label": "YouTube",
     "type": "url",

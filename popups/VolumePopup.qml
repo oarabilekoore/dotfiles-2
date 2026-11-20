@@ -225,12 +225,10 @@ PopupBase {
                         if (!root.source || !root.source.audio) return;
                         if (v > 0) root.source.audio.muted = false;
                         root.source.audio.volume = v;
-                        if (root.parentBar && root.parentBar.osd) root.parentBar.osd.show("mic");
                     }
                     onGlyphClicked: {
                         if (!root.source || !root.source.audio) return;
                         root.source.audio.muted = !root.source.audio.muted;
-                        if (root.parentBar && root.parentBar.osd) root.parentBar.osd.show("mic");
                     }
                 }
             }

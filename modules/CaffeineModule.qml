@@ -6,32 +6,26 @@ import ".."
 Rectangle {
     id: root
 
+    // caffeine.sh creates / removes this flag file; we just watch it.
+    readonly property string flagPath: "/tmp/caffeine_on"
     property bool isCaffeineOn: false
 
-    Process {
-        id: checkProc
-        command: ["bash", "-c", "if [ -f /tmp/caffeine_on ]; then echo 'on'; else echo 'off'; fi"]
-        stdout: StdioCollector {
-            onTextChanged: {
-                root.isCaffeineOn = (text.trim() === "on");
-            }
-        }
+    // Event-driven: no polling process. loadFailed == flag file absent == off.
+    FileView {
+        id: flag
+        path: root.flagPath
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reload()
+        onLoaded: root.isCaffeineOn = true
+        onLoadFailed: root.isCaffeineOn = false
     }
 
     Process {
         id: toggleProc
         command: [Quickshell.env("HOME") + "/.config/hypr/scripts/caffeine.sh", "toggle"]
-        onExited: checkProc.running = true
+        onExited: flag.reload()
     }
-
-    Timer {
-        interval: 3000
-        running: true
-        repeat: true
-        onTriggered: checkProc.running = true
-    }
-
-    Component.onCompleted: checkProc.running = true
 
     height: Theme.barHeight
     width: Theme.moduleWidth
@@ -53,6 +47,8 @@ Rectangle {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
+        // Cheap resync in case the flag was toggled externally (keybind) before the watch caught it.
+        onContainsMouseChanged: if (containsMouse) flag.reload()
         onClicked: toggleProc.running = true
     }
 }

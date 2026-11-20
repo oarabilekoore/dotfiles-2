@@ -95,10 +95,7 @@ ShellRoot {
 
     LazyLoader {
         id: settingsLoader
-        Settings {
-            osd: null
-            notificationCenter: null
-        }
+        Settings {}
 
         onActiveChanged: {
             if (active && root.pendingSettingsTab.length > 0) {
@@ -217,8 +214,6 @@ ShellRoot {
         model: Quickshell.screens
         Bar {
             visible: root.barVisible
-            osd: null
-            notificationCenter: null
         }
     }
 }

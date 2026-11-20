@@ -7,10 +7,7 @@ type a bang beginning with `!`, add a query, and press Enter.
 
 | Bang | What it does | Example |
 |---|---|---|
-| `!ai` | Sends a prompt to the AI provider selected in Apps & AI | `!ai explain Euler's equations` |
 | `!yt` | Searches YouTube | `!yt mechanical linkage simulation` |
-| `!hister` | Opens the native Hister web interface with your query | `!hister thermodynamics notes` |
-| `!h` / `!his` | Aliases for Hister | `!h exam timetable` |
 | `!g` | Searches Google | `!g steam tables` |
 | `!ddg` | Searches DuckDuckGo | `!ddg Arch Linux bluetooth` |
 | `!gh` | Searches GitHub | `!gh quickshell notification server` |
@@ -19,10 +16,7 @@ type a bang beginning with `!`, add a query, and press Enter.
 | `!w` | Searches Wikipedia | `!w fluid mechanics` |
 | `!maps` | Searches Google Maps | `!maps BIUST` |
 
-Typing only `!` displays the available bang list. Normal All-mode searches also
-include results from the Hister HTTP search API. `!hister` opens Hister's own
-web interface in your default browser, preserving its native results and
-preview experience.
+Typing only `!` displays the available bang list.
 
 ## Editable file
 
@@ -51,39 +45,17 @@ term belongs:
 
 Then use `!yt planetary gear animation`.
 
-## Add an AI alias
-
-```json
-{
-  "bang": "ask",
-  "aliases": ["assistant"],
-  "label": "AI Assistant",
-  "type": "ai"
-}
-```
-
-This sends `!ask explain the Coriolis effect` to the configured AI provider.
-
-## Hister configuration
-
-Hister should be running locally (default URL `http://127.0.0.1:4433`). The
-server URL is editable in Control Center → Apps & AI → Hister Personal Search
-and is saved as `histerServerUrl` in `~/.config/quickshell/settings.json`.
-
-- Normal All-mode launcher searches call Hister's `/search?format=json&q=...`
-  endpoint and display matching indexed pages alongside app/file results.
-- `!hister query` opens `http://127.0.0.1:4433/?q=query` (using your configured
-  server URL) in the default browser. Hister's own web interface handles the
-  query, results, history and previews.
-
-The launcher uses `curl` for local API requests. Install it if it is missing.
-
 ## Supported bang types
 
-- `url`: opens a URL created from `template` and the query.
-- `ai`: sends the query to the configured AI provider.
-- `hister`: opens the Hister web interface with the query.
+- `url`: opens a URL created from `template` and the URL-encoded query.
+- `cmd` / `command`: runs `cmd`. A bare `{query}` in the command is replaced by the
+  query, which is handed to the shell as a positional argument (`"$1"`) rather than
+  pasted into the command text, so a query such as `foo; rm -rf ~` is just an
+  argument and cannot run extra commands. Do not wrap `{query}` in your own quotes.
+  Without `{query}`, any text after the bang is appended as one extra argument.
+- `sh` / `shell`: runs whatever you type after the bang as a shell command. This is
+  deliberately a raw shell, like the `>` prefix.
 
 A bang name may contain letters, numbers, `_` and `-`. Aliases use the same
 character set. The launcher reloads the configuration on startup; restart or
-reload Quickshell after changing the file.
+reload Quickshell (`quickshell ipc call launcher reloadConfig`) after changing the file.

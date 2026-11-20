@@ -9,7 +9,7 @@ Personal Linux desktop configuration built around **Hyprland** and **Quickshell*
 - `Launcher.qml` provides application/command search, hybrid file and image search, clipboard history, emoji selection, snippets, calculator and unit conversion, configurable bangs, and file OCR.
 - `Settings.qml`, `Config.qml`, and `Theme.qml` provide settings and appearance controls.
 - `popups/` and other QML components provide focused system controls.
-- `scripts/` contains helper utilities used by the desktop.
+- `scripts/` contains the native C helpers (`update_theme`, `prgnotifier`); build them with `make`.
 - `docs/` contains feature-specific guides.
 
 ## Launcher
@@ -72,19 +72,23 @@ Clipboard images remain available for preview, copying and pasting. Clipboard-im
 
 Hydrogen stores its state under `~/.local/state/quickshell-launcher` by default. Search roots include Documents, Downloads, Pictures, Videos, and Projects. The launcher caches filenames in `file-index.txt` and watches `index.rev` while open, refreshing its cache and active search after a completed sync.
 
-## Notifications and OSD
+## Notifications and status messages
 
-The current shell configuration intentionally does not instantiate a Quickshell notification server or OSD. SwayNC owns desktop notifications, avoiding two applications competing for `org.freedesktop.Notifications`.
+The shell intentionally does not run a notification server or OSD. SwayNC owns desktop notifications, avoiding two applications competing for `org.freedesktop.Notifications`. Short status messages ("Bluetooth enabled", ...) are sent with `notify-send`, and Control Center → Notifications drives SwayNC through `swaync-client`.
+
+## Keyboard
+
+`Esc` closes whatever is open: bar popups, the launcher (first closes its action menu or confirmation) and the Control Center (first cancels a Wi-Fi password prompt). `quickshell ipc call popup close` does the same from a keybind.
 
 ## Requirements
 
-- Hyprland
-- Quickshell and Qt Quick
-- Hydrogen (launcher backend)
-- SwayNC
-- `cliphist`, `wl-copy`, and `wtype` for clipboard workflows
-- `hyprctl` for Hyprland control
-- `xdg-open` and standard desktop utilities
+- Hyprland (`hyprctl`) and Quickshell with Qt Quick
+- Hydrogen on `PATH`: launcher search, OCR and the calendar popup (`hydrogen calendar list|add|open`)
+- SwayNC (`swaync-client`) and `notify-send` (libnotify)
+- `cliphist`, `wl-copy`, `wtype` for clipboard workflows
+- `~/.config/hypr/scripts/caffeine.sh` (toggle script; it must create/remove `/tmp/caffeine_on`)
+- `powerprofilesctl`, `hyprsunset`, `xdg-open`, and a terminal (`terminalCmd`, default `ghostty`)
+- To build the native helpers: a C compiler, `make` and `stb` (`stb_image.h`)
 
 ## Installation
 
@@ -92,10 +96,16 @@ This repository is a collection of desktop configuration files rather than a uni
 
 The shell entry point is `shell.qml`. Quickshell should load the repository's shell entry point, with the repository's QML modules and supporting data kept together. Hydrogen must be installed and available on PATH.
 
+Build and install the native helpers (`update_theme`, `prgnotifier`) into `~/.local/bin` with:
+
+```sh
+make install
+```
+
 ## Configuration and data
 
-- `Config.qml` defines defaults, persisted settings, and the settings-file path.
-- User settings are stored at `~/.config/quickshell/settings.json`.
+- `Config.qml` defines the persisted settings (fonts, bar size and which modules show, `terminalCmd`) and the settings-file path. Every key is read somewhere in the shell; unknown keys in an old file are dropped on the next save.
+- User settings are stored at `~/.config/quickshell/settings.json`. Per-machine files (`settings.json`, `palette.json`, `bangs.json`) are git-ignored.
 - Launcher bangs and snippets are loaded from the Quickshell configuration directory.
 - Launcher state is stored at `~/.local/state/quickshell-launcher/state.json`.
 
@@ -106,6 +116,7 @@ Do not commit personal tokens, API keys, private paths, or machine-specific secr
 - [Launcher guide](docs/LAUNCHER.md)
 - [Bangs guide](docs/BANGS.md)
 - [Notifications guide](docs/NOTIFICATIONS.md)
+- [Performance notes](docs/PERFORMANCE.md)
 
 ## Related project
 

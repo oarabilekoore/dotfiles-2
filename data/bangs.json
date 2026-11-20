@@ -1,18 +1,5 @@
 [
   {
-    "bang": "ai",
-    "label": "AI Assistant",
-    "type": "ai",
-    "description": "Send a prompt to the configured AI provider"
-  },
-  {
-    "bang": "hister",
-    "aliases": ["h", "his"],
-    "label": "Hister Personal Search",
-    "type": "hister",
-    "description": "Search the local Hister index"
-  },
-  {
     "bang": "yt",
     "label": "YouTube",
     "type": "url",

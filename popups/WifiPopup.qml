@@ -45,6 +45,7 @@ PopupBase {
 
     // ---- connect / login state ---------------------------------------------
     property var promptNet: null        // network waiting for a password
+    escapeCloses: promptNet === null    // while prompting, Escape only cancels the prompt
     property var pendingNet: null       // network we asked NetworkManager to join
     property bool pendingHadPsk: false
     property string statusText: ""
@@ -53,7 +54,6 @@ PopupBase {
     function setStatus(msg, isError) {
         root.statusText = msg;
         root.statusIsError = isError;
-        if (msg && root.parentBar && root.parentBar.osd) root.parentBar.osd.showStatus(msg);
     }
 
     function isOpen(net) {
@@ -209,7 +209,6 @@ PopupBase {
                     interactive: !root.hwBlocked
                     onToggled: {
                         Networking.wifiEnabled = !Networking.wifiEnabled;
-                        if (root.parentBar && root.parentBar.osd) root.parentBar.osd.showStatus(Networking.wifiEnabled ? "Wi-Fi enabled" : "Wi-Fi disabled");
                     }
                 }
             }

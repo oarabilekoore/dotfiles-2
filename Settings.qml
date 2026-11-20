@@ -41,8 +41,6 @@ PanelWindow {
     }
 
     // ------------------------------------------------------------------ state
-    property var osd: null
-    property var notificationCenter: null
     property string portalStatus: "Not checked"
     property bool open: false
     property string activeTab: "system"
@@ -111,11 +109,13 @@ PanelWindow {
         Quickshell.execDetached(["sh", "-c", script, "_"].concat(args || []));
     }
 
+    // Shown in the banner at the top of this window.
     function notify(msg) {
-        statusBanner = "";
-        if (osd) osd.showStatus(msg);
+        statusBanner = msg;
+        statusBannerTimer.restart();
     }
 
+    Timer { id: statusBannerTimer; interval: 2500; onTriggered: root.statusBanner = "" }
     Timer { id: powerConfirmTimer; interval: 9000; onTriggered: root.confirmPowerId = "" }
 
     // ------------------------------------------------------------------ persistence
@@ -226,11 +226,14 @@ PanelWindow {
         });
     }
 
+    // Notifications are owned by SwayNC; `swaync-client -d` toggles DND and prints the new state.
     function toggleDoNotDisturb() {
-        if (!notificationCenter) return;
-        notificationCenter.doNotDisturb = !notificationCenter.doNotDisturb;
-        doNotDisturb = notificationCenter.doNotDisturb;
-        notify(doNotDisturb ? "Do Not Disturb enabled" : "Do Not Disturb disabled");
+        runCapture(["swaync-client", "-d", "-sw"], function (raw) {
+            const v = raw.trim();
+            if (v !== "true" && v !== "false") return;
+            root.doNotDisturb = (v === "true");
+            root.notify(root.doNotDisturb ? "Do Not Disturb enabled" : "Do Not Disturb disabled");
+        });
     }
 
     function refreshPowerProfile() {
@@ -253,16 +256,12 @@ PanelWindow {
         runCapture(["hostname"], function (raw) { root.hostName = raw.trim(); });
     }
 
-    Connections {
-        target: root.notificationCenter
-        ignoreUnknownSignals: true
-        function onDoNotDisturbChanged() { root.doNotDisturb = root.notificationCenter ? root.notificationCenter.doNotDisturb : false; }
-        function onEnabledChanged() { root.notificationsAvailable = !!root.notificationCenter; }
-    }
-
     function refreshNotificationsNow() {
-        root.notificationsAvailable = !!root.notificationCenter;
-        root.doNotDisturb = root.notificationCenter ? root.notificationCenter.doNotDisturb : false;
+        runCapture(["swaync-client", "-D", "-sw"], function (raw) {
+            const v = raw.trim();
+            root.notificationsAvailable = (v === "true" || v === "false");
+            root.doNotDisturb = (v === "true");
+        });
     }
 
     function refreshPortalStatus() {
@@ -1221,46 +1220,6 @@ PanelWindow {
                     Layout.margins: 20
                     spacing: 14
 
-                    // Local Hister search integration
-                    Rectangle {
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 118
-                        color: Theme.surface_variant
-                        border.width: 1
-                        border.color: Theme.outline_variant
-                        ColumnLayout {
-                            anchors.fill: parent; anchors.margins: 11; spacing: 6
-                            RowLayout {
-                                Layout.fillWidth: true
-                                Text { text: "HISTER PERSONAL SEARCH"; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize; font.bold: true; color: Theme.on_surface }
-                                Item { Layout.fillWidth: true }
-                                Text { text: Config.histerEnabled ? "Enabled" : "Disabled"; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: Config.histerEnabled ? Theme.success : Theme.on_surface_variant }
-                                Rectangle {
-                                    width: 40; height: 22
-                                    color: Config.histerEnabled ? Theme.primary : Theme.background
-                                    border.width: 1; border.color: Config.histerEnabled ? Theme.primary : Theme.outline_variant
-                                    Rectangle { width: 16; height: 16; y: 2; x: Config.histerEnabled ? 21 : 2; color: Theme.foreground; Behavior on x { NumberAnimation { duration: 130 } } }
-                                    MouseArea { anchors.fill: parent; onClicked: Config.set("histerEnabled", !Config.histerEnabled) }
-                                }
-                            }
-                            RowLayout {
-                                Layout.fillWidth: true; spacing: 8
-                                Text { text: "Server URL"; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: Theme.on_surface_variant }
-                                TextInput {
-                                    id: histerServerUrlInput
-                                    Layout.fillWidth: true; Layout.preferredHeight: 28
-                                    text: Config.histerServerUrl
-                                    color: Theme.on_surface; selectionColor: Theme.primary
-                                    font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall
-                                    verticalAlignment: TextInput.AlignVCenter; leftPadding: 8
-                                    Rectangle { anchors.fill: parent; z: -1; color: Theme.background; border.width: 1; border.color: Theme.outline_variant }
-                                    onEditingFinished: Config.set("histerServerUrl", text.trim().replace(/\/+$/, "") || "http://127.0.0.1:4433")
-                                }
-                            }
-                            Text { text: "All-mode search uses Hister's local search API. Use !hister <query> to open the full native Hister web interface in your browser."; Layout.fillWidth: true; wrapMode: Text.WordWrap; font.family: Theme.fontFamily; font.pixelSize: 9; color: Theme.on_surface_variant }
-                        }
-                    }
-
                     // File Index Cache Management
                     Rectangle {
                         Layout.fillWidth: true
@@ -1619,9 +1578,9 @@ PanelWindow {
                                 Layout.fillWidth: true
                                 Text { text: "Do Not Disturb"; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize; color: Theme.on_surface }
                                 Item { Layout.fillWidth: true }
-                                Text { text: root.notificationsAvailable ? (root.doNotDisturb ? "Enabled" : "Disabled") : "Quickshell unavailable"; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: root.doNotDisturb ? Theme.warning : Theme.on_surface_variant }
+                                Text { text: root.notificationsAvailable ? (root.doNotDisturb ? "Enabled" : "Disabled") : "SwayNC unavailable"; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: root.doNotDisturb ? Theme.warning : Theme.on_surface_variant }
                             }
-                            Text { text: "Quickshell owns the desktop notification service. Do Not Disturb dismisses incoming notifications while enabled."; wrapMode: Text.WordWrap; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: Theme.on_surface_variant }
+                            Text { text: "SwayNC owns desktop notifications. Do Not Disturb silences notification popups while enabled."; Layout.fillWidth: true; wrapMode: Text.WordWrap; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: Theme.on_surface_variant }
                             Rectangle {
                                 Layout.preferredWidth: 190; Layout.preferredHeight: 29
                                 color: root.doNotDisturb ? Theme.alpha(Theme.warning, 0.20) : Theme.background
@@ -1634,16 +1593,10 @@ PanelWindow {
                     Rectangle {
                         Layout.fillWidth: true; Layout.preferredHeight: 42
                         color: Theme.surface_variant; border.width: 1; border.color: Theme.outline_variant
-                        Text { anchors.centerIn: parent; text: "Dismiss all notifications" + (root.notificationCenter ? " (" + root.notificationCenter.count + ")" : ""); font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: Theme.on_surface }
-                        MouseArea { anchors.fill: parent; onClicked: { if (root.notificationCenter) root.notificationCenter.dismissAll(); root.notify("Dismissed all notifications"); } }
+                        Text { anchors.centerIn: parent; text: "Dismiss all notifications"; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: Theme.on_surface }
+                        MouseArea { anchors.fill: parent; onClicked: { Quickshell.execDetached(["swaync-client", "-C", "-sw"]); root.notify("Dismissed all notifications"); } }
                     }
-                    Rectangle {
-                        Layout.fillWidth: true; Layout.preferredHeight: 42
-                        color: Theme.surface_variant; border.width: 1; border.color: Theme.outline_variant
-                        Text { anchors.centerIn: parent; text: root.notificationCenter && root.notificationCenter.enabled ? "Disable desktop notifications" : "Enable desktop notifications"; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: Theme.on_surface }
-                        MouseArea { anchors.fill: parent; onClicked: { if (root.notificationCenter) root.notificationCenter.enabled = !root.notificationCenter.enabled; root.notify(root.notificationCenter && root.notificationCenter.enabled ? "Notifications enabled" : "Notifications disabled"); } }
-                    }
-                    Text { text: "Other notification daemons must be stopped so Quickshell can own org.freedesktop.Notifications."; wrapMode: Text.WordWrap; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: Theme.on_surface_variant }
+                    Text { text: "Notification appearance is configured in SwayNC (~/.config/swaync/)."; Layout.fillWidth: true; wrapMode: Text.WordWrap; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: Theme.on_surface_variant }
                     Item { Layout.fillHeight: true }
                 }
 
