@@ -95,16 +95,11 @@ Row {
 
         Text {
             anchors.centerIn: parent
-            text: "⌄"
+            text: "▦"
             font.family: Theme.fontFamily
-            font.pixelSize: 19
+            font.pixelSize: 17
             font.bold: true
             color: Theme.foreground
-            rotation: root.expanded ? 180 : 0
-
-            Behavior on rotation {
-                NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
-            }
         }
 
         MouseArea {
