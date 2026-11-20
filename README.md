@@ -55,7 +55,7 @@ HYDROGEN_EMBEDDINGS=1 hydrogen index embed
 
 This downloads the local MiniLM and CLIP models, backfills vectors for existing documents and images, and stores the enabled state in the launcher state file. It can use additional CPU and RAM during the initial backfill. Once enabled, future launcher syncs keep embeddings updated. Search inference remains local.
 
-To disable semantic search, set `"semantic": false` in `~/.local/state/quickshell-launcher/state.json`. Existing vectors are retained.
+To disable semantic search and future embedding updates, choose **Disable Semantic & Visual Search** in the launcher. Existing vectors and downloaded model files are retained.
 
 ### OCR
 
