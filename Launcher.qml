@@ -73,6 +73,7 @@ PanelWindow {
         { id: "reidx",     title: "Refresh File & Vector Index",       kw: "reindex refresh files vector fts5 cache",       glyph: "󰑓", keepOpen: true, fn: () => root.rebuildFileCache(true) },
         { id: "reidx-img", title: "Index Images (Rust OCR + Vision)", kw: "reindex images ocr vision captions photos", glyph: "󰋩", keepOpen: true, fn: () => root.rebuildImageIndex() },
         { id: "semantic", title: "Build Semantic & Visual Index", kw: "semantic vector embeddings minilm clip visual search", glyph: "󰍉", keepOpen: true, fn: () => root.buildSemanticIndex() },
+        { id: "semantic-off", title: "Disable Semantic & Visual Search", kw: "disable semantic vector embeddings visual search", glyph: "󰍉", keepOpen: true, fn: () => root.disableSemanticSearch() },
         { id: "m-hidden",  title: "Show Hidden Apps",                  kw: "hidden unhide apps invisible",                glyph: "󰈉", mode: "hidden" },
         { id: "m-files",   title: "Search Files",                      kw: "files find search vector content",            glyph: "󰈔", mode: "files" },
         { id: "m-clip",    title: "Clipboard History",                 kw: "clipboard history paste copy",             glyph: "󰅌", mode: "clipboard" },
@@ -334,6 +335,13 @@ PanelWindow {
                 if (root.query.trim().length >= 2) root.requestContentSearch();
             });
         });
+    }
+
+    function disableSemanticSearch() {
+        semanticSearchEnabled = false;
+        contentResults = [];
+        contentQuery = "";
+        saveStore();
     }
 
     function requestImageSearch(imagePath) {
@@ -1336,7 +1344,7 @@ PanelWindow {
         const seen = {};
         const qTrim = query.trim();
 
-        // 1. Sparse Vector + FTS5/BM25 content & image OCR/caption matches ranked higher
+        // 1. Hydrogen's lexical + MiniLM + CLIP ranked content and image matches
         if (terms.length > 0 && contentQuery === qTrim && contentResults.length > 0) {
             for (let i = 0; i < contentResults.length; i++) {
                 const cr = contentResults[i];
