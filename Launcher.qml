@@ -318,7 +318,7 @@ PanelWindow {
         runCapture(["sh", "-c", script, "_", hydrogenBin], function (raw) {
             root.semanticSetupRunning = false;
             root.fileIndexing = false;
-            const lines = String(raw || "").trim().split(/\\r?\\n/).filter(line => line.length > 0);
+            const lines = String(raw || "").trim().split(/\r?\n/).filter(line => line.length > 0);
             let summary = null;
             try { summary = lines.length > 0 ? JSON.parse(lines[lines.length - 1]) : null; } catch (e) {}
             if (!summary || summary.status !== "done") {
@@ -329,7 +329,7 @@ PanelWindow {
             root.saveStore();
             root.fileCacheTime = 0;
             root.runCapture(["cat", root.fileCachePath], function (contents) {
-                root.cachedFiles = String(contents || "").split("\\n").filter(line => line.length > 0);
+                root.cachedFiles = String(contents || "").split("\n").filter(line => line.length > 0);
                 root.fileCacheTime = Date.now();
                 if (root.query.trim().length >= 2) root.requestContentSearch();
             });
