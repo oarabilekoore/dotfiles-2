@@ -342,6 +342,7 @@ PanelWindow {
         contentResults = [];
         contentQuery = "";
         saveStore();
+        if (query.trim().length >= 2) requestContentSearch();
     }
 
     function requestImageSearch(imagePath) {
