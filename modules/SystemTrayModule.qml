@@ -14,12 +14,79 @@ Row {
     readonly property int expanderWidth: 24
 
     spacing: 0
-    visible: trayRepeater.count > 0
+    visible: activeRepeater.count > 0
 
-    // Match Omarchy: keep a small chevron visible and reveal the tray on hover.
-    // The expanded state follows the pointer across the chevron and tray icons.
-    HoverHandler {
-        onHoveredChanged: root.expanded = hovered
+    // Passive entries are rendered by a second repeater so they always follow
+    // active and attention-seeking icons, regardless of registration order.
+    component TrayEntry: Rectangle {
+        id: entry
+
+        required property var modelData
+        property var trayRoot: null
+        property bool passiveGroup: false
+        readonly property var item: modelData
+        readonly property bool belongsHere: (item.status === Status.Passive) === passiveGroup
+
+        width: trayRoot && trayRoot.expanded && belongsHere ? Theme.moduleWidth : 0
+        height: Theme.barHeight
+        clip: true
+        color: trayMouse.containsMouse ? Theme.alpha(Theme.foreground, 0.08) : "transparent"
+        radius: Theme.moduleRadius
+
+        Behavior on width {
+            NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+        }
+
+        function openMenu() {
+            const bar = entry.trayRoot ? entry.trayRoot.parentBar : null;
+            if (!bar || !entry.item || !entry.item.hasMenu) return;
+            const same = bar.activePopup === "traymenu" && bar.trayItem === entry.item;
+            bar.trayItem = entry.item;
+            bar.trayAnchor = entry;
+            bar.activePopup = same ? "" : "traymenu";
+        }
+
+        Text {
+            anchors.centerIn: parent
+            visible: trayIcon.status !== Image.Ready
+            text: entry.item && entry.item.title ? entry.item.title.charAt(0).toUpperCase() : "?"
+            font.family: Theme.fontFamily
+            font.pixelSize: 13
+            font.bold: true
+            color: Theme.foreground
+        }
+
+        // Preserve the original icon supplied by each application.
+        IconImage {
+            id: trayIcon
+            anchors.centerIn: parent
+            width: entry.trayRoot ? entry.trayRoot.iconSize : 16
+            height: entry.trayRoot ? entry.trayRoot.iconSize : 16
+            implicitSize: entry.trayRoot ? entry.trayRoot.iconSize : 16
+            mipmap: true
+            source: entry.item ? entry.item.icon : ""
+        }
+
+        MouseArea {
+            id: trayMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+            cursorShape: Qt.PointingHandCursor
+
+            onClicked: (mouse) => {
+                if (!entry.item) return;
+                if (mouse.button === Qt.RightButton) {
+                    entry.openMenu();
+                } else if (mouse.button === Qt.MiddleButton) {
+                    entry.item.secondaryActivate();
+                } else if (entry.item.onlyMenu) {
+                    entry.openMenu();
+                } else {
+                    entry.item.activate();
+                }
+            }
+        }
     }
 
     Item {
@@ -28,12 +95,12 @@ Row {
 
         Text {
             anchors.centerIn: parent
-            text: ">"
+            text: "⌄"
             font.family: Theme.fontFamily
-            font.pixelSize: 15
+            font.pixelSize: 19
             font.bold: true
             color: Theme.foreground
-            rotation: root.expanded ? 90 : 0
+            rotation: root.expanded ? 180 : 0
 
             Behavior on rotation {
                 NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
@@ -47,75 +114,22 @@ Row {
         }
     }
 
+    // Active and NeedsAttention icons stay at the front.
     Repeater {
-        id: trayRepeater
+        id: activeRepeater
         model: SystemTray.items
+        delegate: TrayEntry {
+            trayRoot: root
+            passiveGroup: false
+        }
+    }
 
-        delegate: Rectangle {
-            id: box
-            required property var modelData
-            readonly property var item: modelData
-
-            width: root.expanded ? Theme.moduleWidth : 0
-            height: Theme.barHeight
-            clip: true
-            color: trayMouse.containsMouse ? Theme.alpha(Theme.foreground, 0.08) : "transparent"
-            radius: Theme.moduleRadius
-
-            Behavior on width {
-                NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
-            }
-
-            function openMenu() {
-                const bar = root.parentBar;
-                if (!bar || !box.item || !box.item.hasMenu) return;
-                const same = bar.activePopup === "traymenu" && bar.trayItem === box.item;
-                bar.trayItem = box.item;
-                bar.trayAnchor = box;
-                bar.activePopup = same ? "" : "traymenu";
-            }
-
-            Text {
-                anchors.centerIn: parent
-                visible: trayIcon.status !== Image.Ready
-                text: box.item && box.item.title ? box.item.title.charAt(0).toUpperCase() : "?"
-                font.family: Theme.fontFamily
-                font.pixelSize: 13
-                font.bold: true
-                color: Theme.foreground
-            }
-
-            // Keep the application's supplied icon untouched, including its colours.
-            IconImage {
-                id: trayIcon
-                anchors.centerIn: parent
-                width: root.iconSize
-                height: root.iconSize
-                implicitSize: root.iconSize
-                mipmap: true
-                source: box.item ? box.item.icon : ""
-            }
-
-            MouseArea {
-                id: trayMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
-                cursorShape: Qt.PointingHandCursor
-
-                onClicked: (mouse) => {
-                    if (!box.item) return;
-                    if (mouse.button === Qt.RightButton) {
-                        box.openMenu();
-                    } else if (mouse.button === Qt.MiddleButton) {
-                        box.item.secondaryActivate();
-                    } else if (box.item.onlyMenu) {
-                        box.openMenu();
-                    } else {
-                        box.item.activate();
-                    }
-                }
-            }
+    // Passive (idle/deactivated) icons are always grouped at the end.
+    Repeater {
+        model: SystemTray.items
+        delegate: TrayEntry {
+            trayRoot: root
+            passiveGroup: true
         }
     }
 }
