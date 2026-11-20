@@ -57,6 +57,11 @@ PanelWindow {
         spacing: 0
 
         Workspaces { visible: Config.showWorkspaces }
+SystemTrayModule {
+            id: trayMod
+            parentBar: barWindow
+            visible: Config.showTray
+        }
 
         MprisModule {
             id: mprisMod
@@ -64,7 +69,6 @@ PanelWindow {
             visible: Config.showMpris
         }
 
-        DictationModule { visible: Config.showDictation }
     }
 
     ClockModule {
@@ -82,12 +86,7 @@ PanelWindow {
         anchors.verticalCenter: parent.verticalCenter
         spacing: 0
 
-        SystemTrayModule {
-            id: trayMod
-            parentBar: barWindow
-            visible: Config.showTray
-        }
-
+        
         BluetoothModule {
             id: btMod
             parentBar: barWindow
