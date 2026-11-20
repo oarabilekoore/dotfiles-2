@@ -102,7 +102,6 @@ PanelWindow {
             visible: Config.showNetwork
         }
 
-        VolumeModule { id: volMod; parentBar: barWindow }
 
         BatteryModule {
             id: batMod
@@ -119,14 +118,6 @@ PanelWindow {
         WifiPopup {
             parentBar: barWindow
             anchorItem: netMod
-        }
-    }
-
-    LazyLoader {
-        activeAsync: barWindow.activePopup === "volume"
-        VolumePopup {
-            parentBar: barWindow
-            anchorItem: volMod
         }
     }
 
