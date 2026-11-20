@@ -1,0 +1,3672 @@
+From a9cc779a0ba18662f83baa460bb059a1025cc0da Mon Sep 17 00:00:00 2001
+From: cleanup <cleanup@local>
+Date: Fri, 20 Nov 2026 22:14:02 +0000
+Subject: [PATCH] Clean up shell: fix bang injection, drop dead
+ code/settings/python, Escape closes popups
+
+- launcher: pass bang {query} to sh as "$1" instead of splicing into the script
+- remove Python helpers (search/OCR/calendar now come from hydrogen), qs-osd, stale shell backups
+- remove dead OSD / NotificationCenter plumbing; status toasts via notify-send (Notify.qml),
+  Control Center notifications tab drives swaync-client
+- Config.qml keeps only settings the shell reads; drop Hister/AI leftovers
+- Caffeine module watches its flag file instead of polling every 3s; clock bound to SystemClock
+- PopupBase: Escape dismisses (Wi-Fi password prompt cancels first)
+- add Makefile for C helpers, .gitignore, update docs
+---
+ .gitignore                              |   15 +
+ Bar.qml                                 |    3 -
+ BluetoothPower.qml                      |    2 +-
+ Brightness.qml                          |   63 --
+ Config.qml                              |  157 +---
+ Launcher.qml                            |   22 +-
+ Makefile                                |   23 +
+ NotificationCenter.qml                  |  223 -----
+ Notify.qml                              |   13 +
+ README.md                               |   35 +-
+ Settings.qml                            |   89 +-
+ Theme.qml                               |    1 +
+ bangs.json                              |   11 -
+ bangs.json.bak                          |   57 --
+ data/bangs.json                         |   13 -
+ data/shell-swaync.qml                   |  114 ---
+ docs/BANGS.md                           |   48 +-
+ docs/NOTIFICATIONS.md                   |   13 +-
+ docs/PERFORMANCE.md                     |    2 +-
+ image_indexer.json                      |    1 -
+ modules/CaffeineModule.qml              |   32 +-
+ modules/ClockModule.qml                 |   53 +-
+ popups/BatteryPopup.qml                 |    2 +-
+ popups/PopupBase.qml                    |   13 +-
+ popups/VolumePopup.qml                  |    2 -
+ popups/WifiPopup.qml                    |    3 +-
+ qmldir                                  |    5 +-
+ scripts/__pycache__/ocr.cpython-314.pyc |  Bin 6341 -> 0 bytes
+ scripts/events.py                       |  239 ------
+ scripts/file_index.py                   | 1042 -----------------------
+ scripts/image_caption.py                |  155 ----
+ scripts/new-event.py                    |   55 --
+ scripts/ocr.py                          |  116 ---
+ scripts/open-calendar.sh                |   20 -
+ scripts/qs-osd                          |   15 -
+ settings.json                           |   59 +-
+ shell-swaync.qml                        |   97 ---
+ shell.qml                               |    7 +-
+ shell.qml.backup                        |  101 ---
+ 39 files changed, 188 insertions(+), 2733 deletions(-)
+ create mode 100644 .gitignore
+ delete mode 100644 Brightness.qml
+ create mode 100644 Makefile
+ delete mode 100644 NotificationCenter.qml
+ create mode 100644 Notify.qml
+ delete mode 100644 bangs.json.bak
+ delete mode 100644 data/shell-swaync.qml
+ delete mode 100644 image_indexer.json
+ delete mode 100644 scripts/__pycache__/ocr.cpython-314.pyc
+ delete mode 100644 scripts/events.py
+ delete mode 100644 scripts/file_index.py
+ delete mode 100644 scripts/image_caption.py
+ delete mode 100644 scripts/new-event.py
+ delete mode 100755 scripts/ocr.py
+ delete mode 100755 scripts/open-calendar.sh
+ delete mode 100755 scripts/qs-osd
+ delete mode 100644 shell-swaync.qml
+ delete mode 100644 shell.qml.backup
+
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..2bbe418
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,15 @@
++build/
++__pycache__/
++*.pyc
++*.bak
++*.backup
++*.swp
++
++# Per-machine files: written at runtime or generated from your wallpaper.
++# If they are still tracked, stop tracking them without deleting your copies:
++#   git rm --cached settings.json palette.json bangs.json
++# (bangs.json is created from data/bangs.json on first launch; Theme.qml has built-in
++#  colours, so a missing palette.json is fine.)
++settings.json
++palette.json
++bangs.json
+diff --git a/Bar.qml b/Bar.qml
+index 1a16d6d..ba544a8 100644
+--- a/Bar.qml
++++ b/Bar.qml
+@@ -28,8 +28,6 @@ PanelWindow {
+     WlrLayershell.layer: WlrLayer.Top
+     WlrLayershell.namespace: "quickshell"
+ 
+-    property var osd: null
+-    property var notificationCenter: null
+     property string activePopup: ""
+     property var trayItem: null
+     property var trayAnchor: null
+@@ -71,7 +69,6 @@ PanelWindow {
+         id: clockMod
+         anchors.centerIn: parent
+         parentBar: barWindow
+-        osd: barWindow.osd
+         visible: Config.showClock
+     }
+ 
+diff --git a/BluetoothPower.qml b/BluetoothPower.qml
+index 90e1286..9915341 100644
+--- a/BluetoothPower.qml
++++ b/BluetoothPower.qml
+@@ -38,7 +38,7 @@ Singleton {
+     }
+ 
+     function showStatus(message) {
+-        Quickshell.execDetached(["quickshell", "ipc", "call", "osd", "status", message]);
++        Notify.status(message);
+     }
+ 
+     function enable() {
+diff --git a/Brightness.qml b/Brightness.qml
+deleted file mode 100644
+index 3a32033..0000000
+--- a/Brightness.qml
++++ /dev/null
+@@ -1,63 +0,0 @@
+-pragma Singleton
+-import QtQuick
+-import Quickshell
+-import Quickshell.Io
+-
+-// Backlight control shared by the OSD and the settings popup (via brightnessctl).
+-Singleton {
+-    id: root
+-
+-    property int percent: 0
+-    property bool available: false
+-    property int pending: -1          // newest value requested while a set is still running
+-
+-    function refresh() {
+-        if (!readProc.running) readProc.running = true;
+-    }
+-
+-    function run(v) {
+-        setProc.command = ["brightnessctl", "-c", "backlight", "-q", "set", v + "%"];
+-        setProc.running = true;
+-    }
+-
+-    function set(p) {
+-        const v = Math.max(1, Math.min(100, Math.round(p)));   // never 0%: black screen
+-        root.percent = v;                                       // optimistic, re-read afterwards
+-        if (setProc.running) { root.pending = v; return; }
+-        run(v);
+-    }
+-
+-    function step(delta) { set(root.percent + delta); }
+-
+-    function parse(t) {
+-        // brightnessctl -m: device,class,current,percent%,max
+-        const f = t.trim().split("\n")[0].split(",");
+-        if (f.length >= 5) {
+-            const p = parseInt(f[3]);
+-            if (!isNaN(p)) { root.percent = p; root.available = true; }
+-        }
+-    }
+-
+-    Process {
+-        id: setProc
+-        onExited: {
+-            if (root.pending >= 0) {
+-                const v = root.pending;
+-                root.pending = -1;
+-                root.run(v);
+-            } else {
+-                root.refresh();
+-            }
+-        }
+-    }
+-
+-    Process {
+-        id: readProc
+-        command: ["brightnessctl", "-c", "backlight", "-m", "info"]
+-        stdout: StdioCollector {
+-            onStreamFinished: root.parse(text)
+-        }
+-    }
+-
+-    Component.onCompleted: refresh()
+-}
+diff --git a/Config.qml b/Config.qml
+index 3dc8698..911dc5a 100644
+--- a/Config.qml
++++ b/Config.qml
+@@ -3,27 +3,27 @@ import QtQuick
+ import Quickshell
+ import Quickshell.Io
+ 
++// User settings persisted to ~/.config/quickshell/settings.json.
++//
++// Every key below is read somewhere in the shell. Unknown keys in an old
++// settings.json are ignored and dropped on the next save, so settings that no
++// longer do anything can't linger. Add a key here only together with the code
++// that consumes it.
+ Singleton {
+     id: root
+ 
+     readonly property string configDir: Quickshell.env("HOME") + "/.config/quickshell"
+     readonly property string configPath: configDir + "/settings.json"
+     property bool isLoaded: false
+-    property bool isSaving: false
+ 
+-    // 1. Appearance & Bar
+-    property string colorScheme: "wallust"          // "wallust" | "dark" | "light"
+-    property bool wallustAutoReload: true
+-    property string accentColor: "#7aa2f7"
++    // Appearance (Theme.qml)
+     property string fontFamily: "JetBrainsMono Nerd Font Propo"
+     property real fontScale: 1.0
+     property int cornerRadius: 0
+-    property int borderWidth: 1
+-    property string barPosition: "top"
++
++    // Bar (Bar.qml / Theme.qml)
+     property int barHeight: 32
+-    property bool barFloating: false
+     property int barMargin: 0
+-
+     property bool showWorkspaces: true
+     property bool showMpris: true
+     property bool showDictation: true
+@@ -34,81 +34,19 @@ Singleton {
+     property bool showBattery: true
+     property bool showClock: true
+ 
+-    // 2. Hyprland & Input
+-    property int gapsIn: 4
+-    property int gapsOut: 8
+-    property int hyprBorderSize: 1
+-    property int hyprRounding: 0
+-    property string hyprLayout: "dwindle"
+-    property bool hyprBlur: false
+-    property int hyprBlurPasses: 2
+-    property bool hyprShadows: false
+-    property bool hyprAnimations: true
+-    property bool focusFollowsMouse: true
+-    property real mouseSensitivity: 0.0
+-    property bool naturalScroll: false
+-
+-    // 3. Display, Sound, Network & Power
+-    property int brightnessStep: 5
+-    property bool nightLightEnabled: false
+-    property int nightLightTemp: 4200
+-    property int idleDimSeconds: 180
+-    property int idleLockSeconds: 300
+-    property int idleDpmsSeconds: 600
+-
+-    property int volumeStep: 5
+-    property bool allowOverAmplification: false
+-    property bool muteMicOnStartup: false
+-    property int osdTimeoutMs: 1800
+-    property bool osdOnClock: true
+-    property bool notificationsEnabled: true
+-    property bool notificationsDoNotDisturb: false
+-    property string preferredPlayer: "ncspot"
+-
+-    property int wifiScanIntervalSec: 15
+-    property bool btAutoPower: true
+-    property bool btShowBattery: true
+-
+-    property string powerProfile: "balanced"
+-    property int batteryWarnPercent: 20
+-    property int batteryCritPercent: 10
+-    property bool caffeineOnFullscreen: true
+-    property bool caffeineOnAc: false
+-
+-    // 4. Launcher & Hister Search
+-    property int launcherWidth: 680
+-    property int launcherMaxResults: 9
+-    property bool histerEnabled: true
+-    property string histerCommand: "hister" // retained for older settings.json files
+-    property string histerServerUrl: "http://127.0.0.1:4433"
+-    property bool launcherShowRecent: true
++    // Apps
+     property string terminalCmd: "ghostty"
+-    property string fileManagerCmd: "yazi"
+-    property string shellPrefix: ">"
+-    property string calcPrefix: "="
+-    property string emojiPrefix: ":"
+ 
+     readonly property var persistedKeys: [
+-        "colorScheme", "wallustAutoReload", "accentColor", "fontFamily", "fontScale",
+-        "cornerRadius", "borderWidth", "barPosition", "barHeight", "barFloating", "barMargin",
++        "fontFamily", "fontScale", "cornerRadius",
++        "barHeight", "barMargin",
+         "showWorkspaces", "showMpris", "showDictation", "showCaffeine", "showTray",
+         "showNetwork", "showBluetooth", "showBattery", "showClock",
+-        "gapsIn", "gapsOut", "hyprBorderSize", "hyprRounding", "hyprLayout",
+-        "hyprBlur", "hyprBlurPasses", "hyprShadows", "hyprAnimations",
+-        "focusFollowsMouse", "mouseSensitivity", "naturalScroll",
+-        "brightnessStep", "nightLightEnabled", "nightLightTemp",
+-        "idleDimSeconds", "idleLockSeconds", "idleDpmsSeconds",
+-        "volumeStep", "allowOverAmplification", "muteMicOnStartup", "osdTimeoutMs", "osdOnClock", "notificationsEnabled", "notificationsDoNotDisturb", "preferredPlayer",
+-        "wifiScanIntervalSec", "btAutoPower", "btShowBattery",
+-        "powerProfile", "batteryWarnPercent", "batteryCritPercent", "caffeineOnFullscreen", "caffeineOnAc",
+-        "launcherWidth", "launcherMaxResults", "launcherShowRecent", "histerEnabled", "histerCommand", "histerServerUrl", "terminalCmd", "fileManagerCmd",
+-        "shellPrefix", "calcPrefix", "emojiPrefix"
++        "terminalCmd"
+     ]
+ 
+     function save() {
+-        if (!isLoaded) return;
+-        isSaving = true;
+-        saveTimer.restart();
++        if (isLoaded) saveTimer.restart();
+     }
+ 
+     function set(key, value) {
+@@ -117,35 +55,6 @@ Singleton {
+         save();
+     }
+ 
+-    function resetSection(keys) {
+-        const defaults = {
+-            colorScheme: "wallust", wallustAutoReload: true, accentColor: "#7aa2f7",
+-            fontFamily: "JetBrainsMono Nerd Font Propo", fontScale: 1.0, cornerRadius: 0,
+-            borderWidth: 1, barPosition: "top", barHeight: 32, barFloating: false, barMargin: 0,
+-            showWorkspaces: true, showMpris: true, showDictation: true, showCaffeine: true,
+-            showTray: true, showNetwork: true, showBluetooth: true, showBattery: true, showClock: true,
+-            gapsIn: 4, gapsOut: 8, hyprBorderSize: 1, hyprRounding: 0, hyprLayout: "dwindle",
+-            hyprBlur: false, hyprBlurPasses: 2, hyprShadows: false, hyprAnimations: true,
+-            focusFollowsMouse: true, mouseSensitivity: 0.0, naturalScroll: false,
+-            brightnessStep: 5, nightLightEnabled: false, nightLightTemp: 4200,
+-            idleDimSeconds: 180, idleLockSeconds: 300, idleDpmsSeconds: 600,
+-            volumeStep: 5, allowOverAmplification: false, muteMicOnStartup: false,
+-            osdTimeoutMs: 1800, osdOnClock: true, notificationsEnabled: true, notificationsDoNotDisturb: false, preferredPlayer: "ncspot",
+-            wifiScanIntervalSec: 15, btAutoPower: true, btShowBattery: true,
+-            powerProfile: "balanced", batteryWarnPercent: 20, batteryCritPercent: 10,
+-            caffeineOnFullscreen: true, caffeineOnAc: false,
+-            launcherWidth: 680, launcherMaxResults: 9, launcherShowRecent: true,
+-            histerEnabled: true, histerCommand: "hister", histerServerUrl: "http://127.0.0.1:4433",
+-            terminalCmd: "ghostty", fileManagerCmd: "yazi",
+-            shellPrefix: ">", calcPrefix: "=", emojiPrefix: ":"
+-        };
+-        for (let i = 0; i < keys.length; i++) {
+-            const k = keys[i];
+-            if (defaults.hasOwnProperty(k)) root[k] = defaults[k];
+-        }
+-        save();
+-    }
+-
+     function loadFromJson(raw) {
+         try {
+             if (raw && raw.trim().length > 0) {
+@@ -173,7 +82,6 @@ Singleton {
+                 out[k] = root[k];
+             }
+             configFile.setText(JSON.stringify(out, null, 2));
+-            root.isSaving = false;
+         }
+     }
+ 
+@@ -183,39 +91,6 @@ Singleton {
+         watchChanges: true
+         onFileChanged: reload()
+         onLoaded: root.loadFromJson(text())
+-        onLoadFailed: {
+-            root.isLoaded = true;
+-        }
+-    }
+-
+-    function applyHyprland() {
+-        const batch = [
+-            `keyword general:gaps_in ${gapsIn}`,
+-            `keyword general:gaps_out ${gapsOut}`,
+-            `keyword general:border_size ${hyprBorderSize}`,
+-            `keyword general:layout ${hyprLayout}`,
+-            `keyword decoration:rounding ${hyprRounding}`,
+-            `keyword decoration:blur:enabled ${hyprBlur ? "true" : "false"}`,
+-            `keyword decoration:blur:passes ${hyprBlurPasses}`,
+-            `keyword decoration:shadow:enabled ${hyprShadows ? "true" : "false"}`,
+-            `keyword animations:enabled ${hyprAnimations ? "true" : "false"}`,
+-            `keyword input:follow_mouse ${focusFollowsMouse ? 1 : 0}`,
+-            `keyword input:sensitivity ${mouseSensitivity}`,
+-            `keyword input:touchpad:natural_scroll ${naturalScroll ? "true" : "false"}`
+-        ].join(" ; ");
+-        Quickshell.execDetached(["hyprctl", "--batch", batch]);
+-    }
+-
+-    function applyNightLight() {
+-        if (nightLightEnabled) {
+-            Quickshell.execDetached(["sh", "-c", `pkill -x hyprsunset; hyprsunset -t ${nightLightTemp} &`]);
+-        } else {
+-            Quickshell.execDetached(["pkill", "-x", "hyprsunset"]);
+-        }
+-    }
+-
+-    function applyPowerProfile(profile) {
+-        set("powerProfile", profile);
+-        Quickshell.execDetached(["powerprofilesctl", "set", profile]);
++        onLoadFailed: root.isLoaded = true
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/Launcher.qml b/Launcher.qml
+index 0416181..f903aec 100644
+--- a/Launcher.qml
++++ b/Launcher.qml
+@@ -44,7 +44,7 @@ PanelWindow {
+ 
+     readonly property var modeOrder: ["all", "files", "clipboard", "emoji", "snippets"]
+     readonly property var modeMeta: ({
+-        all:       { label: "All",       glyph: "󰍉", hint: "Search apps, file contents, snippets (,hdr), or !sl / !sh / !yt / !hister…" },
++        all:       { label: "All",       glyph: "󰍉", hint: "Search apps, file contents, snippets (,hdr), or !sl / !sh / !yt…" },
+         files:     { label: "Files",     glyph: "󰈔", hint: "Search filenames, document contents & image OCR/captions…" },
+         clipboard: { label: "Clipboard", glyph: "󰅌", hint: "Search clipboard history (Del delete, Ctrl+D clear)…" },
+         emoji:     { label: "Emoji",     glyph: "󰞅", hint: "Search emoji…" },
+@@ -971,7 +971,7 @@ PanelWindow {
+         const bang = findBang(name);
+         if (!bang) {
+             return [{ key: "bang-unknown:" + name, section: "Bangs", title: "Unknown bang: !" + name,
+-                      subtitle: "Edit ~/.config/quickshell/bangs.json to add it. Try !sl, !sh, !yt or !hister.", glyph: "󰋔", badge: "Help", hits: [],
++                      subtitle: "Edit ~/.config/quickshell/bangs.json to add it. Try !sl, !sh or !yt.", glyph: "󰋔", badge: "Help", hits: [],
+                       actions: [{ label: "Open launcher documentation", run: () => root.openUrl("file://" + Quickshell.shellPath("docs/LAUNCHER.md")) }] }];
+         }
+         if (bang.type === "cmd" || bang.type === "command") {
+@@ -988,18 +988,24 @@ PanelWindow {
+                     actions: [{ label: "Type arguments", keepOpen: true, run: () => {} }]
+                 }];
+             }
+-            const resolvedCmd = hasPlaceholder ? rawCmd.replace(/\{query\}/g, body) : (body ? rawCmd + " " + body : rawCmd);
++            // The query is passed to the shell as a positional argument ("$1") and is never
++            // spliced into the script text, so `!bang foo; rm -rf ~` cannot run extra commands.
++            // (Use a bare {query} in the template; inside single quotes "$1" stays literal.)
++            const script = hasPlaceholder ? rawCmd.replace(/\{query\}/g, () => '"$1"') : (body ? rawCmd + ' "$1"' : rawCmd);
++            const quoted = "'" + body.replace(/'/g, "'\\''") + "'";
++            // Display / clipboard form only: the query shell-quoted into the command.
++            const shownCmd = hasPlaceholder ? rawCmd.replace(/\{query\}/g, () => quoted) : (body ? rawCmd + " " + quoted : rawCmd);
+             const label = bang.label || name;
+             return [{
+-                key: "bang-cmd:" + name + ":" + resolvedCmd,
++                key: "bang-cmd:" + name + ":" + shownCmd,
+                 section: label,
+                 title: label + (body && !hasPlaceholder ? " (" + body + ")" : ""),
+-                subtitle: "$ " + resolvedCmd,
++                subtitle: "$ " + shownCmd,
+                 glyph: "󰆍", badge: "Command", hits: [],
+                 actions: [
+-                    { label: "Run " + label, confirm: !!bang.confirm, run: () => Quickshell.execDetached(["sh", "-c", resolvedCmd]) },
+-                    { label: "Run in Terminal", confirm: !!bang.confirm, run: () => Quickshell.execDetached([root.terminal, "-e", "sh", "-c", resolvedCmd + "; echo; printf 'Press Enter to close…'; read _"]) },
+-                    { label: "Copy Command", run: () => Quickshell.execDetached(["wl-copy", resolvedCmd]) }
++                    { label: "Run " + label, confirm: !!bang.confirm, run: () => Quickshell.execDetached(["sh", "-c", script, "_", body]) },
++                    { label: "Run in Terminal", confirm: !!bang.confirm, run: () => Quickshell.execDetached([root.terminal, "-e", "sh", "-c", script + "; echo; printf 'Press Enter to close…'; read _", "_", body]) },
++                    { label: "Copy Command", run: () => Quickshell.execDetached(["wl-copy", shownCmd]) }
+                 ]
+             }];
+         }
+diff --git a/Makefile b/Makefile
+new file mode 100644
+index 0000000..543f464
+--- /dev/null
++++ b/Makefile
+@@ -0,0 +1,23 @@
++# Native helpers used by the shell. `make install` puts them in ~/.local/bin.
++#   update_theme  - wallpaper-derived palette generator (writes palette.json, applies GTK/Hyprland colours)
++#   prgnotifier   - volume / brightness / mic notifier (talks to SwayNC)
++# update_theme needs stb_image.h (Arch: `pacman -S stb`).
++PREFIX ?= $(HOME)/.local
++CC     ?= cc
++CFLAGS ?= -O2 -Wall -Wextra
++
++TOOLS := update_theme prgnotifier
++
++all: $(addprefix build/,$(TOOLS))
++
++build/%: scripts/%.c
++	@mkdir -p build
++	$(CC) $(CFLAGS) -o $@ $< -lm
++
++install: all
++	@for t in $(TOOLS); do install -Dm755 build/$$t $(PREFIX)/bin/$$t; done
++
++clean:
++	rm -rf build
++
++.PHONY: all install clean
+diff --git a/NotificationCenter.qml b/NotificationCenter.qml
+deleted file mode 100644
+index 362cfbb..0000000
+--- a/NotificationCenter.qml
++++ /dev/null
+@@ -1,223 +0,0 @@
+-import QtQuick
+-import QtQuick.Layouts
+-import Quickshell
+-import Quickshell.Wayland
+-import Quickshell.Hyprland
+-import Quickshell.Services.Notifications
+-
+-// Owns org.freedesktop.Notifications for the session and renders the cards.
+-// Stop any external notification daemon before launching Quickshell.
+-Item {
+-    id: root
+-
+-    property bool doNotDisturb: Config.notificationsDoNotDisturb
+-    property bool enabled: Config.notificationsEnabled
+-    readonly property var notifications: server.trackedNotifications
+-    readonly property int count: server.trackedNotifications.count
+-
+-    onDoNotDisturbChanged: Config.set("notificationsDoNotDisturb", doNotDisturb)
+-    onEnabledChanged: Config.set("notificationsEnabled", enabled)
+-
+-    function dismissAll() {
+-        const items = server.trackedNotifications.values;
+-        for (let i = items.length - 1; i >= 0; i--) {
+-            if (items[i]) items[i].dismiss();
+-        }
+-    }
+-
+-    NotificationServer {
+-        id: server
+-        keepOnReload: false
+-        bodySupported: true
+-        bodyMarkupSupported: false
+-        imageSupported: true
+-        bodyImagesSupported: true
+-        actionsSupported: true
+-        actionIconsSupported: true
+-        persistenceSupported: true
+-        onNotification: notification => {
+-            if (!root.enabled || root.doNotDisturb) {
+-                notification.dismiss();
+-                return;
+-            }
+-            notification.tracked = true;
+-        }
+-    }
+-
+-    PanelWindow {
+-        id: notificationWindow
+-
+-        screen: {
+-            const focused = Hyprland.focusedMonitor;
+-            if (focused) {
+-                for (let i = 0; i < Quickshell.screens.length; i++)
+-                    if (Quickshell.screens[i].name === focused.name) return Quickshell.screens[i];
+-            }
+-            return Quickshell.screens.length > 0 ? Quickshell.screens[0] : null;
+-        }
+-        // Match the supplied SwayNC layout: notifications appear bottom-centre.
+-        anchors { bottom: true; left: true }
+-        margins {
+-            bottom: 15
+-            left: screen ? Math.max(6, Math.round((screen.width - implicitWidth) / 2)) : 6
+-        }
+-        implicitWidth: 320
+-        implicitHeight: Math.min(4, root.count) * 108 + 8
+-        visible: root.enabled && !root.doNotDisturb && root.count > 0
+-        color: "transparent"
+-        exclusionMode: ExclusionMode.Ignore
+-        mask: Region { item: notificationList }
+-
+-        WlrLayershell.layer: WlrLayer.Overlay
+-        WlrLayershell.namespace: "quickshell-notifications"
+-        WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+-
+-        ListView {
+-            id: notificationList
+-            anchors.fill: parent
+-            spacing: 8
+-            clip: true
+-            interactive: contentHeight > height
+-            boundsBehavior: Flickable.StopAtBounds
+-            model: root.notifications
+-            add: Transition {
+-                NumberAnimation {
+-                    properties: "opacity,scale"
+-                    from: 0; to: 1
+-                    duration: 140
+-                    easing.type: Easing.OutCubic
+-                }
+-            }
+-            remove: Transition {
+-                NumberAnimation {
+-                    properties: "opacity,scale"
+-                    to: 0
+-                    duration: 110
+-                    easing.type: Easing.InCubic
+-                }
+-            }
+-            delegate: Rectangle {
+-                id: card
+-                required property var modelData
+-                readonly property var notification: modelData
+-                width: ListView.view.width
+-                height: Math.max(92, cardContent.implicitHeight + 20)
+-                radius: Theme.popupRadius
+-                color: Theme.surface
+-                border.width: 1
+-                border.color: notification.urgency === NotificationUrgency.Critical ? Theme.error : Theme.outline_variant
+-
+-                // Match the supplied SwayNC timing: low 3s, normal 5s,
+-                // critical stays until dismissed. Honour explicit app timeouts.
+-                Timer {
+-                    interval: card.notification.expireTimeout > 0
+-                              ? Math.round(card.notification.expireTimeout * 1000)
+-                              : (card.notification.expireTimeout === 0 || card.notification.urgency === NotificationUrgency.Critical
+-                                 ? 0 : (card.notification.urgency === NotificationUrgency.Low ? 3000 : 5000))
+-                    running: interval > 0
+-                    repeat: false
+-                    onTriggered: card.notification.expire()
+-                }
+-
+-                RowLayout {
+-                    id: cardContent
+-                    anchors.fill: parent
+-                    anchors.margins: 12
+-                    spacing: 10
+-
+-                    Text {
+-                        Layout.preferredWidth: 24
+-                        Layout.alignment: Qt.AlignTop
+-                        text: card.notification.urgency === NotificationUrgency.Critical ? "󰀦" : "󰂚"
+-                        font.family: Theme.fontFamily
+-                        font.pixelSize: 19
+-                        color: card.notification.urgency === NotificationUrgency.Critical ? Theme.error : Theme.primary
+-                    }
+-
+-                    ColumnLayout {
+-                        Layout.fillWidth: true
+-                        spacing: 4
+-                        RowLayout {
+-                            Layout.fillWidth: true
+-                            Text {
+-                                Layout.fillWidth: true
+-                                text: card.notification.appName || "Notification"
+-                                elide: Text.ElideRight
+-                                font.family: Theme.fontFamily
+-                                font.pixelSize: Theme.fontSizeSmall
+-                                font.bold: true
+-                                color: Theme.on_surface_variant
+-                            }
+-                            Text {
+-                                text: "×"
+-                                font.family: Theme.fontFamily
+-                                font.pixelSize: 18
+-                                color: Theme.on_surface_variant
+-                                MouseArea {
+-                                    anchors.fill: parent
+-                                    anchors.margins: -6
+-                                    cursorShape: Qt.PointingHandCursor
+-                                    onClicked: card.notification.dismiss()
+-                                }
+-                            }
+-                        }
+-                        Text {
+-                            Layout.fillWidth: true
+-                            text: card.notification.summary || ""
+-                            textFormat: Text.PlainText
+-                            wrapMode: Text.WordWrap
+-                            maximumLineCount: 2
+-                            elide: Text.ElideRight
+-                            font.family: Theme.fontFamily
+-                            font.pixelSize: Theme.fontSize
+-                            font.bold: true
+-                            color: Theme.foreground
+-                        }
+-                        Text {
+-                            Layout.fillWidth: true
+-                            visible: (card.notification.body || "").length > 0
+-                            text: card.notification.body || ""
+-                            textFormat: Text.PlainText
+-                            wrapMode: Text.WordWrap
+-                            maximumLineCount: 3
+-                            elide: Text.ElideRight
+-                            font.family: Theme.fontFamily
+-                            font.pixelSize: Theme.fontSizeSmall
+-                            color: Theme.on_surface_variant
+-                        }
+-                        RowLayout {
+-                            Layout.fillWidth: true
+-                            spacing: 6
+-                            visible: card.notification.actions && card.notification.actions.length > 0
+-                            Repeater {
+-                                model: card.notification.actions || []
+-                                delegate: Rectangle {
+-                                    required property var modelData
+-                                    implicitWidth: actionLabel.implicitWidth + 18
+-                                    implicitHeight: 26
+-                                    radius: 4
+-                                    color: Theme.surface_variant
+-                                    border.width: 1
+-                                    border.color: Theme.outline_variant
+-                                    Text {
+-                                        id: actionLabel
+-                                        anchors.centerIn: parent
+-                                        text: modelData.text || "Open"
+-                                        font.family: Theme.fontFamily
+-                                        font.pixelSize: Theme.fontSizeSmall
+-                                        color: Theme.primary
+-                                    }
+-                                    MouseArea {
+-                                        anchors.fill: parent
+-                                        cursorShape: Qt.PointingHandCursor
+-                                        onClicked: modelData.invoke()
+-                                    }
+-                                }
+-                            }
+-                        }
+-                    }
+-                }
+-            }
+-        }
+-    }
+-}
+diff --git a/Notify.qml b/Notify.qml
+new file mode 100644
+index 0000000..6f2223c
+--- /dev/null
++++ b/Notify.qml
+@@ -0,0 +1,13 @@
++pragma Singleton
++import QtQuick
++import Quickshell
++
++// One-line status toasts ("Bluetooth enabled", ...). Delivered through the
++// notification daemon (SwayNC owns org.freedesktop.Notifications), so the shell
++// needs no OSD surface of its own. Requires `notify-send` (libnotify).
++Singleton {
++    function status(message) {
++        if (!message) return;
++        Quickshell.execDetached(["notify-send", "--app-name=Quickshell", "--expire-time=2000", message]);
++    }
++}
+diff --git a/README.md b/README.md
+index 315ea7b..84733eb 100644
+--- a/README.md
++++ b/README.md
+@@ -9,7 +9,7 @@ Personal Linux desktop configuration built around **Hyprland** and **Quickshell*
+ - `Launcher.qml` provides application/command search, hybrid file and image search, clipboard history, emoji selection, snippets, calculator and unit conversion, configurable bangs, and file OCR.
+ - `Settings.qml`, `Config.qml`, and `Theme.qml` provide settings and appearance controls.
+ - `popups/` and other QML components provide focused system controls.
+-- `scripts/` contains helper utilities used by the desktop.
++- `scripts/` contains the native C helpers (`update_theme`, `prgnotifier`); build them with `make`.
+ - `docs/` contains feature-specific guides.
+ 
+ ## Launcher
+@@ -72,19 +72,23 @@ Clipboard images remain available for preview, copying and pasting. Clipboard-im
+ 
+ Hydrogen stores its state under `~/.local/state/quickshell-launcher` by default. Search roots include Documents, Downloads, Pictures, Videos, and Projects. The launcher caches filenames in `file-index.txt` and watches `index.rev` while open, refreshing its cache and active search after a completed sync.
+ 
+-## Notifications and OSD
++## Notifications and status messages
+ 
+-The current shell configuration intentionally does not instantiate a Quickshell notification server or OSD. SwayNC owns desktop notifications, avoiding two applications competing for `org.freedesktop.Notifications`.
++The shell intentionally does not run a notification server or OSD. SwayNC owns desktop notifications, avoiding two applications competing for `org.freedesktop.Notifications`. Short status messages ("Bluetooth enabled", ...) are sent with `notify-send`, and Control Center → Notifications drives SwayNC through `swaync-client`.
++
++## Keyboard
++
++`Esc` closes whatever is open: bar popups, the launcher (first closes its action menu or confirmation) and the Control Center (first cancels a Wi-Fi password prompt). `quickshell ipc call popup close` does the same from a keybind.
+ 
+ ## Requirements
+ 
+-- Hyprland
+-- Quickshell and Qt Quick
+-- Hydrogen (launcher backend)
+-- SwayNC
+-- `cliphist`, `wl-copy`, and `wtype` for clipboard workflows
+-- `hyprctl` for Hyprland control
+-- `xdg-open` and standard desktop utilities
++- Hyprland (`hyprctl`) and Quickshell with Qt Quick
++- Hydrogen on `PATH`: launcher search, OCR and the calendar popup (`hydrogen calendar list|add|open`)
++- SwayNC (`swaync-client`) and `notify-send` (libnotify)
++- `cliphist`, `wl-copy`, `wtype` for clipboard workflows
++- `~/.config/hypr/scripts/caffeine.sh` (toggle script; it must create/remove `/tmp/caffeine_on`)
++- `powerprofilesctl`, `hyprsunset`, `xdg-open`, and a terminal (`terminalCmd`, default `ghostty`)
++- To build the native helpers: a C compiler, `make` and `stb` (`stb_image.h`)
+ 
+ ## Installation
+ 
+@@ -92,10 +96,16 @@ This repository is a collection of desktop configuration files rather than a uni
+ 
+ The shell entry point is `shell.qml`. Quickshell should load the repository's shell entry point, with the repository's QML modules and supporting data kept together. Hydrogen must be installed and available on PATH.
+ 
++Build and install the native helpers (`update_theme`, `prgnotifier`) into `~/.local/bin` with:
++
++```sh
++make install
++```
++
+ ## Configuration and data
+ 
+-- `Config.qml` defines defaults, persisted settings, and the settings-file path.
+-- User settings are stored at `~/.config/quickshell/settings.json`.
++- `Config.qml` defines the persisted settings (fonts, bar size and which modules show, `terminalCmd`) and the settings-file path. Every key is read somewhere in the shell; unknown keys in an old file are dropped on the next save.
++- User settings are stored at `~/.config/quickshell/settings.json`. Per-machine files (`settings.json`, `palette.json`, `bangs.json`) are git-ignored.
+ - Launcher bangs and snippets are loaded from the Quickshell configuration directory.
+ - Launcher state is stored at `~/.local/state/quickshell-launcher/state.json`.
+ 
+@@ -106,6 +116,7 @@ Do not commit personal tokens, API keys, private paths, or machine-specific secr
+ - [Launcher guide](docs/LAUNCHER.md)
+ - [Bangs guide](docs/BANGS.md)
+ - [Notifications guide](docs/NOTIFICATIONS.md)
++- [Performance notes](docs/PERFORMANCE.md)
+ 
+ ## Related project
+ 
+diff --git a/Settings.qml b/Settings.qml
+index 5542792..f3509c9 100644
+--- a/Settings.qml
++++ b/Settings.qml
+@@ -41,8 +41,6 @@ PanelWindow {
+     }
+ 
+     // ------------------------------------------------------------------ state
+-    property var osd: null
+-    property var notificationCenter: null
+     property string portalStatus: "Not checked"
+     property bool open: false
+     property string activeTab: "system"
+@@ -111,11 +109,13 @@ PanelWindow {
+         Quickshell.execDetached(["sh", "-c", script, "_"].concat(args || []));
+     }
+ 
++    // Shown in the banner at the top of this window.
+     function notify(msg) {
+-        statusBanner = "";
+-        if (osd) osd.showStatus(msg);
++        statusBanner = msg;
++        statusBannerTimer.restart();
+     }
+ 
++    Timer { id: statusBannerTimer; interval: 2500; onTriggered: root.statusBanner = "" }
+     Timer { id: powerConfirmTimer; interval: 9000; onTriggered: root.confirmPowerId = "" }
+ 
+     // ------------------------------------------------------------------ persistence
+@@ -226,11 +226,14 @@ PanelWindow {
+         });
+     }
+ 
++    // Notifications are owned by SwayNC; `swaync-client -d` toggles DND and prints the new state.
+     function toggleDoNotDisturb() {
+-        if (!notificationCenter) return;
+-        notificationCenter.doNotDisturb = !notificationCenter.doNotDisturb;
+-        doNotDisturb = notificationCenter.doNotDisturb;
+-        notify(doNotDisturb ? "Do Not Disturb enabled" : "Do Not Disturb disabled");
++        runCapture(["swaync-client", "-d", "-sw"], function (raw) {
++            const v = raw.trim();
++            if (v !== "true" && v !== "false") return;
++            root.doNotDisturb = (v === "true");
++            root.notify(root.doNotDisturb ? "Do Not Disturb enabled" : "Do Not Disturb disabled");
++        });
+     }
+ 
+     function refreshPowerProfile() {
+@@ -253,16 +256,12 @@ PanelWindow {
+         runCapture(["hostname"], function (raw) { root.hostName = raw.trim(); });
+     }
+ 
+-    Connections {
+-        target: root.notificationCenter
+-        ignoreUnknownSignals: true
+-        function onDoNotDisturbChanged() { root.doNotDisturb = root.notificationCenter ? root.notificationCenter.doNotDisturb : false; }
+-        function onEnabledChanged() { root.notificationsAvailable = !!root.notificationCenter; }
+-    }
+-
+     function refreshNotificationsNow() {
+-        root.notificationsAvailable = !!root.notificationCenter;
+-        root.doNotDisturb = root.notificationCenter ? root.notificationCenter.doNotDisturb : false;
++        runCapture(["swaync-client", "-D", "-sw"], function (raw) {
++            const v = raw.trim();
++            root.notificationsAvailable = (v === "true" || v === "false");
++            root.doNotDisturb = (v === "true");
++        });
+     }
+ 
+     function refreshPortalStatus() {
+@@ -1221,46 +1220,6 @@ PanelWindow {
+                     Layout.margins: 20
+                     spacing: 14
+ 
+-                    // Local Hister search integration
+-                    Rectangle {
+-                        Layout.fillWidth: true
+-                        Layout.preferredHeight: 118
+-                        color: Theme.surface_variant
+-                        border.width: 1
+-                        border.color: Theme.outline_variant
+-                        ColumnLayout {
+-                            anchors.fill: parent; anchors.margins: 11; spacing: 6
+-                            RowLayout {
+-                                Layout.fillWidth: true
+-                                Text { text: "HISTER PERSONAL SEARCH"; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize; font.bold: true; color: Theme.on_surface }
+-                                Item { Layout.fillWidth: true }
+-                                Text { text: Config.histerEnabled ? "Enabled" : "Disabled"; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: Config.histerEnabled ? Theme.success : Theme.on_surface_variant }
+-                                Rectangle {
+-                                    width: 40; height: 22
+-                                    color: Config.histerEnabled ? Theme.primary : Theme.background
+-                                    border.width: 1; border.color: Config.histerEnabled ? Theme.primary : Theme.outline_variant
+-                                    Rectangle { width: 16; height: 16; y: 2; x: Config.histerEnabled ? 21 : 2; color: Theme.foreground; Behavior on x { NumberAnimation { duration: 130 } } }
+-                                    MouseArea { anchors.fill: parent; onClicked: Config.set("histerEnabled", !Config.histerEnabled) }
+-                                }
+-                            }
+-                            RowLayout {
+-                                Layout.fillWidth: true; spacing: 8
+-                                Text { text: "Server URL"; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: Theme.on_surface_variant }
+-                                TextInput {
+-                                    id: histerServerUrlInput
+-                                    Layout.fillWidth: true; Layout.preferredHeight: 28
+-                                    text: Config.histerServerUrl
+-                                    color: Theme.on_surface; selectionColor: Theme.primary
+-                                    font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall
+-                                    verticalAlignment: TextInput.AlignVCenter; leftPadding: 8
+-                                    Rectangle { anchors.fill: parent; z: -1; color: Theme.background; border.width: 1; border.color: Theme.outline_variant }
+-                                    onEditingFinished: Config.set("histerServerUrl", text.trim().replace(/\/+$/, "") || "http://127.0.0.1:4433")
+-                                }
+-                            }
+-                            Text { text: "All-mode search uses Hister's local search API. Use !hister <query> to open the full native Hister web interface in your browser."; Layout.fillWidth: true; wrapMode: Text.WordWrap; font.family: Theme.fontFamily; font.pixelSize: 9; color: Theme.on_surface_variant }
+-                        }
+-                    }
+-
+                     // File Index Cache Management
+                     Rectangle {
+                         Layout.fillWidth: true
+@@ -1619,9 +1578,9 @@ PanelWindow {
+                                 Layout.fillWidth: true
+                                 Text { text: "Do Not Disturb"; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize; color: Theme.on_surface }
+                                 Item { Layout.fillWidth: true }
+-                                Text { text: root.notificationsAvailable ? (root.doNotDisturb ? "Enabled" : "Disabled") : "Quickshell unavailable"; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: root.doNotDisturb ? Theme.warning : Theme.on_surface_variant }
++                                Text { text: root.notificationsAvailable ? (root.doNotDisturb ? "Enabled" : "Disabled") : "SwayNC unavailable"; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: root.doNotDisturb ? Theme.warning : Theme.on_surface_variant }
+                             }
+-                            Text { text: "Quickshell owns the desktop notification service. Do Not Disturb dismisses incoming notifications while enabled."; wrapMode: Text.WordWrap; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: Theme.on_surface_variant }
++                            Text { text: "SwayNC owns desktop notifications. Do Not Disturb silences notification popups while enabled."; Layout.fillWidth: true; wrapMode: Text.WordWrap; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: Theme.on_surface_variant }
+                             Rectangle {
+                                 Layout.preferredWidth: 190; Layout.preferredHeight: 29
+                                 color: root.doNotDisturb ? Theme.alpha(Theme.warning, 0.20) : Theme.background
+@@ -1634,16 +1593,10 @@ PanelWindow {
+                     Rectangle {
+                         Layout.fillWidth: true; Layout.preferredHeight: 42
+                         color: Theme.surface_variant; border.width: 1; border.color: Theme.outline_variant
+-                        Text { anchors.centerIn: parent; text: "Dismiss all notifications" + (root.notificationCenter ? " (" + root.notificationCenter.count + ")" : ""); font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: Theme.on_surface }
+-                        MouseArea { anchors.fill: parent; onClicked: { if (root.notificationCenter) root.notificationCenter.dismissAll(); root.notify("Dismissed all notifications"); } }
+-                    }
+-                    Rectangle {
+-                        Layout.fillWidth: true; Layout.preferredHeight: 42
+-                        color: Theme.surface_variant; border.width: 1; border.color: Theme.outline_variant
+-                        Text { anchors.centerIn: parent; text: root.notificationCenter && root.notificationCenter.enabled ? "Disable desktop notifications" : "Enable desktop notifications"; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: Theme.on_surface }
+-                        MouseArea { anchors.fill: parent; onClicked: { if (root.notificationCenter) root.notificationCenter.enabled = !root.notificationCenter.enabled; root.notify(root.notificationCenter && root.notificationCenter.enabled ? "Notifications enabled" : "Notifications disabled"); } }
++                        Text { anchors.centerIn: parent; text: "Dismiss all notifications"; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: Theme.on_surface }
++                        MouseArea { anchors.fill: parent; onClicked: { Quickshell.execDetached(["swaync-client", "-C", "-sw"]); root.notify("Dismissed all notifications"); } }
+                     }
+-                    Text { text: "Other notification daemons must be stopped so Quickshell can own org.freedesktop.Notifications."; wrapMode: Text.WordWrap; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: Theme.on_surface_variant }
++                    Text { text: "Notification appearance is configured in SwayNC (~/.config/swaync/)."; Layout.fillWidth: true; wrapMode: Text.WordWrap; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: Theme.on_surface_variant }
+                     Item { Layout.fillHeight: true }
+                 }
+ 
+diff --git a/Theme.qml b/Theme.qml
+index e50c0ce..3f8a5ce 100644
+--- a/Theme.qml
++++ b/Theme.qml
+@@ -83,6 +83,7 @@ Singleton {
+         id: paletteFile
+         path: Quickshell.shellPath("palette.json")
+         watchChanges: true
++        printErrors: false   // palette.json is generated; the built-in colours cover a fresh install
+         onFileChanged: reload()
+         onLoaded: root.loadPalette(text())
+     }
+diff --git a/bangs.json b/bangs.json
+index dbff67b..7565ff7 100644
+--- a/bangs.json
++++ b/bangs.json
+@@ -45,17 +45,6 @@
+     "confirm": true,
+     "description": "Power off the system"
+   },
+-  {
+-    "bang": "hister",
+-    "aliases": [
+-      "h",
+-      "his"
+-    ],
+-    "label": "Hister",
+-    "type": "url",
+-    "template": "http://127.0.0.1:4433/?q={query}",
+-    "emptyUrl": "http://127.0.0.1:4433/"
+-  },
+   {
+     "bang": "yt",
+     "label": "YouTube",
+diff --git a/bangs.json.bak b/bangs.json.bak
+deleted file mode 100644
+index fe85a88..0000000
+--- a/bangs.json.bak
++++ /dev/null
+@@ -1,57 +0,0 @@
+-[
+-  {
+-    "bang": "hister",
+-    "aliases": ["h", "his"],
+-    "label": "Hister Personal Search",
+-    "type": "hister",
+-    "description": "Search the local Hister index"
+-  },
+-  {
+-    "bang": "yt",
+-    "label": "YouTube",
+-    "type": "url",
+-    "template": "https://www.youtube.com/results?search_query={query}"
+-  },
+-  {
+-    "bang": "g",
+-    "label": "Google",
+-    "type": "url",
+-    "template": "https://www.google.com/search?q={query}"
+-  },
+-  {
+-    "bang": "ddg",
+-    "label": "DuckDuckGo",
+-    "type": "url",
+-    "template": "https://duckduckgo.com/?q={query}"
+-  },
+-  {
+-    "bang": "gh",
+-    "label": "GitHub",
+-    "type": "url",
+-    "template": "https://github.com/search?q={query}"
+-  },
+-  {
+-    "bang": "aw",
+-    "label": "Arch Wiki",
+-    "type": "url",
+-    "template": "https://wiki.archlinux.org/index.php?search={query}"
+-  },
+-  {
+-    "bang": "aur",
+-    "label": "AUR",
+-    "type": "url",
+-    "template": "https://aur.archlinux.org/packages?K={query}"
+-  },
+-  {
+-    "bang": "w",
+-    "label": "Wikipedia",
+-    "type": "url",
+-    "template": "https://en.wikipedia.org/w/index.php?search={query}"
+-  },
+-  {
+-    "bang": "maps",
+-    "label": "Google Maps",
+-    "type": "url",
+-    "template": "https://www.google.com/maps/search/{query}"
+-  }
+-]
+diff --git a/data/bangs.json b/data/bangs.json
+index cf0a11f..f009ac3 100644
+--- a/data/bangs.json
++++ b/data/bangs.json
+@@ -1,17 +1,4 @@
+ [
+-  {
+-    "bang": "ai",
+-    "label": "AI Assistant",
+-    "type": "ai",
+-    "description": "Send a prompt to the configured AI provider"
+-  },
+-  {
+-    "bang": "hister",
+-    "aliases": ["h", "his"],
+-    "label": "Hister Personal Search",
+-    "type": "hister",
+-    "description": "Search the local Hister index"
+-  },
+   {
+     "bang": "yt",
+     "label": "YouTube",
+diff --git a/data/shell-swaync.qml b/data/shell-swaync.qml
+deleted file mode 100644
+index c94896f..0000000
+--- a/data/shell-swaync.qml
++++ /dev/null
+@@ -1,114 +0,0 @@
+-import QtQuick
+-import Quickshell
+-import Quickshell.Wayland
+-import Quickshell.Io
+-import Quickshell.Hyprland
+-
+-ShellRoot {
+-    id: root
+-
+-    property bool barVisible: true
+-
+-    IpcHandler {
+-        target: "bar"
+-        function toggle() {
+-            root.barVisible = !root.barVisible;
+-        }
+-    }
+-
+-    // Open/close any popup from a keybind, on the focused monitor:
+-    //   quickshell ipc call popup toggle settings
+-    // names: settings, wifi, bluetooth, volume, battery, calendar, mpris
+-    IpcHandler {
+-        target: "popup"
+-        function toggle(name: string): void {
+-            if (name === "settings") {
+-                settings.toggle("system");
+-                return;
+-            }
+-            const fm = Hyprland.focusedMonitor;
+-            const focused = fm ? fm.name : "";
+-            let target = null;
+-            for (let i = 0; i < bars.instances.length; i++) {
+-                const b = bars.instances[i];
+-                if (b.screen && b.screen.name === focused) target = b;
+-            }
+-            if (!target && bars.instances.length > 0) target = bars.instances[0];
+-            for (let i = 0; i < bars.instances.length; i++) {
+-                const b = bars.instances[i];
+-                if (b === target) b.activePopup = (b.activePopup === name ? "" : name);
+-                else b.activePopup = "";
+-            }
+-        }
+-        function close(): void {
+-            settings.dismiss();
+-            for (let i = 0; i < bars.instances.length; i++) bars.instances[i].activePopup = "";
+-        }
+-    }
+-
+-    // OSD is intentionally disabled. Use SwayNC for desktop notifications.
+-    // No Quickshell NotificationServer is instantiated, so SwayNC can own
+-    // org.freedesktop.Notifications without competing with this shell.
+-
+-    Settings {
+-        id: settings
+-        osd: null
+-        notificationCenter: null
+-    }
+-
+-    // Open/close the unified control center:
+-    //   quickshell ipc call settings toggle <system|network|bluetooth|theme|launcher|power>
+-    IpcHandler {
+-        target: "settings"
+-        function toggle(tab: string): void {
+-            settings.toggle(tab);
+-        }
+-        function close(): void {
+-            settings.dismiss();
+-        }
+-    }
+-
+-    Launcher {
+-        id: launcher
+-    }
+-
+-    // Open/close the launcher from a keybind or external script:
+-    //   quickshell ipc call launcher toggle all
+-    //   quickshell ipc call launcher open files
+-    //   quickshell ipc call launcher dmenu "Prompt" "/tmp/in" "/tmp/out"
+-    //   quickshell ipc call launcher reindex
+-    //   quickshell ipc call launcher reloadConfig
+-    // modes: all, files, clipboard, emoji, snippets, hidden
+-    IpcHandler {
+-        target: "launcher"
+-        function toggle(mode: string): void {
+-            launcher.toggle(mode);
+-        }
+-        function open(mode: string): void {
+-            launcher.present(mode);
+-        }
+-        function close(): void {
+-            launcher.dismiss();
+-        }
+-        function dmenu(prompt: string, inPath: string, outPath: string): void {
+-            launcher.presentDmenu(prompt, inPath, outPath);
+-        }
+-        function reindex(): void {
+-            launcher.rebuildFileCache(true);
+-        }
+-        function reloadConfig(): void {
+-            launcher.loadBangConfig();
+-            launcher.loadSnippets();
+-        }
+-    }
+-
+-    Variants {
+-        id: bars
+-        model: Quickshell.screens
+-        Bar {
+-            visible: root.barVisible
+-            osd: null
+-            notificationCenter: null
+-        }
+-    }
+-}
+\ No newline at end of file
+diff --git a/docs/BANGS.md b/docs/BANGS.md
+index 6871a14..01b6bcf 100644
+--- a/docs/BANGS.md
++++ b/docs/BANGS.md
+@@ -7,10 +7,7 @@ type a bang beginning with `!`, add a query, and press Enter.
+ 
+ | Bang | What it does | Example |
+ |---|---|---|
+-| `!ai` | Sends a prompt to the AI provider selected in Apps & AI | `!ai explain Euler's equations` |
+ | `!yt` | Searches YouTube | `!yt mechanical linkage simulation` |
+-| `!hister` | Opens the native Hister web interface with your query | `!hister thermodynamics notes` |
+-| `!h` / `!his` | Aliases for Hister | `!h exam timetable` |
+ | `!g` | Searches Google | `!g steam tables` |
+ | `!ddg` | Searches DuckDuckGo | `!ddg Arch Linux bluetooth` |
+ | `!gh` | Searches GitHub | `!gh quickshell notification server` |
+@@ -19,10 +16,7 @@ type a bang beginning with `!`, add a query, and press Enter.
+ | `!w` | Searches Wikipedia | `!w fluid mechanics` |
+ | `!maps` | Searches Google Maps | `!maps BIUST` |
+ 
+-Typing only `!` displays the available bang list. Normal All-mode searches also
+-include results from the Hister HTTP search API. `!hister` opens Hister's own
+-web interface in your default browser, preserving its native results and
+-preview experience.
++Typing only `!` displays the available bang list.
+ 
+ ## Editable file
+ 
+@@ -51,39 +45,17 @@ term belongs:
+ 
+ Then use `!yt planetary gear animation`.
+ 
+-## Add an AI alias
+-
+-```json
+-{
+-  "bang": "ask",
+-  "aliases": ["assistant"],
+-  "label": "AI Assistant",
+-  "type": "ai"
+-}
+-```
+-
+-This sends `!ask explain the Coriolis effect` to the configured AI provider.
+-
+-## Hister configuration
+-
+-Hister should be running locally (default URL `http://127.0.0.1:4433`). The
+-server URL is editable in Control Center → Apps & AI → Hister Personal Search
+-and is saved as `histerServerUrl` in `~/.config/quickshell/settings.json`.
+-
+-- Normal All-mode launcher searches call Hister's `/search?format=json&q=...`
+-  endpoint and display matching indexed pages alongside app/file results.
+-- `!hister query` opens `http://127.0.0.1:4433/?q=query` (using your configured
+-  server URL) in the default browser. Hister's own web interface handles the
+-  query, results, history and previews.
+-
+-The launcher uses `curl` for local API requests. Install it if it is missing.
+-
+ ## Supported bang types
+ 
+-- `url`: opens a URL created from `template` and the query.
+-- `ai`: sends the query to the configured AI provider.
+-- `hister`: opens the Hister web interface with the query.
++- `url`: opens a URL created from `template` and the URL-encoded query.
++- `cmd` / `command`: runs `cmd`. A bare `{query}` in the command is replaced by the
++  query, which is handed to the shell as a positional argument (`"$1"`) rather than
++  pasted into the command text, so a query such as `foo; rm -rf ~` is just an
++  argument and cannot run extra commands. Do not wrap `{query}` in your own quotes.
++  Without `{query}`, any text after the bang is appended as one extra argument.
++- `sh` / `shell`: runs whatever you type after the bang as a shell command. This is
++  deliberately a raw shell, like the `>` prefix.
+ 
+ A bang name may contain letters, numbers, `_` and `-`. Aliases use the same
+ character set. The launcher reloads the configuration on startup; restart or
+-reload Quickshell after changing the file.
++reload Quickshell (`quickshell ipc call launcher reloadConfig`) after changing the file.
+diff --git a/docs/NOTIFICATIONS.md b/docs/NOTIFICATIONS.md
+index a22ca04..6ea9851 100644
+--- a/docs/NOTIFICATIONS.md
++++ b/docs/NOTIFICATIONS.md
+@@ -1,4 +1,4 @@
+-# Notifications and OSD
++# Notifications and status toasts
+ 
+ This configuration deliberately delegates desktop notifications to **SwayNC**.
+ Quickshell does not instantiate a `NotificationServer`, so it does not compete
+@@ -8,10 +8,13 @@ with SwayNC for the session's `org.freedesktop.Notifications` D-Bus name.
+ 
+ - **SwayNC** owns desktop notifications and the notification centre.
+ - **Quickshell** provides the bar, launcher and control centre.
+-- The Quickshell OSD is disabled in the current shell entry point. Volume,
+-  brightness and other helper scripts may still invoke their configured
+-  external OSD integration, but this repository does not create a competing
+-  Quickshell OSD surface.
++- Short status messages from the shell ("Bluetooth enabled", "Power profile
++  updated") are sent through `notify-send`, so SwayNC displays them like any
++  other notification (`Notify.qml`). There is no separate Quickshell OSD.
++- Volume and brightness feedback comes from `scripts/prgnotifier.c`, which also
++  talks to SwayNC.
++- Control Center → Notifications drives SwayNC through `swaync-client`
++  (Do Not Disturb, dismiss all).
+ 
+ Do not enable a second notification server while SwayNC is running. D-Bus
+ notification ownership is exclusive; two daemons cannot both own the same
+diff --git a/docs/PERFORMANCE.md b/docs/PERFORMANCE.md
+index 90a4b91..6995bf0 100644
+--- a/docs/PERFORMANCE.md
++++ b/docs/PERFORMANCE.md
+@@ -7,7 +7,7 @@ This shell uses Quickshell's `LazyLoader` for expensive windows and popup trees.
+ - The main launcher is created on its first IPC open and destroyed 2.2 seconds after it closes. The short grace period allows the close animation to finish and avoids destroying it during a quick reopen.
+ - The full settings/control-center window is created on demand and destroyed 1.4 seconds after closing.
+ - Each bar popup (Wi-Fi, Bluetooth, volume, battery, tray menu, compact settings, calendar, and media controls) exists only while that popup is selected. Closing it releases its QML object tree and its service bindings.
+-- The clock text refreshes once per minute rather than every ten seconds.
++- The clock label is bound to a minute-precision `SystemClock` (no timer of its own), and the Caffeine indicator watches its flag file instead of spawning a process every few seconds.
+ 
+ ## Behaviour and trade-offs
+ 
+diff --git a/image_indexer.json b/image_indexer.json
+deleted file mode 100644
+index 2f977aa..0000000
+--- a/image_indexer.json
++++ /dev/null
+@@ -1 +0,0 @@
+-{"model": "cnmoro/tiny-image-captioning"}
+diff --git a/modules/CaffeineModule.qml b/modules/CaffeineModule.qml
+index 333e802..997c10a 100644
+--- a/modules/CaffeineModule.qml
++++ b/modules/CaffeineModule.qml
+@@ -6,33 +6,27 @@ import ".."
+ Rectangle {
+     id: root
+ 
++    // caffeine.sh creates / removes this flag file; we just watch it.
++    readonly property string flagPath: "/tmp/caffeine_on"
+     property bool isCaffeineOn: false
+ 
+-    Process {
+-        id: checkProc
+-        command: ["bash", "-c", "if [ -f /tmp/caffeine_on ]; then echo 'on'; else echo 'off'; fi"]
+-        stdout: StdioCollector {
+-            onTextChanged: {
+-                root.isCaffeineOn = (text.trim() === "on");
+-            }
+-        }
++    // Event-driven: no polling process. loadFailed == flag file absent == off.
++    FileView {
++        id: flag
++        path: root.flagPath
++        watchChanges: true
++        printErrors: false
++        onFileChanged: reload()
++        onLoaded: root.isCaffeineOn = true
++        onLoadFailed: root.isCaffeineOn = false
+     }
+ 
+     Process {
+         id: toggleProc
+         command: [Quickshell.env("HOME") + "/.config/hypr/scripts/caffeine.sh", "toggle"]
+-        onExited: checkProc.running = true
+-    }
+-
+-    Timer {
+-        interval: 3000
+-        running: true
+-        repeat: true
+-        onTriggered: checkProc.running = true
++        onExited: flag.reload()
+     }
+ 
+-    Component.onCompleted: checkProc.running = true
+-
+     height: Theme.barHeight
+     width: Theme.moduleWidth
+     color: mouseArea.containsMouse ? Theme.alpha(Theme.foreground, 0.08) : "transparent"
+@@ -53,6 +47,8 @@ Rectangle {
+         anchors.fill: parent
+         hoverEnabled: true
+         cursorShape: Qt.PointingHandCursor
++        // Cheap resync in case the flag was toggled externally (keybind) before the watch caught it.
++        onContainsMouseChanged: if (containsMouse) flag.reload()
+         onClicked: toggleProc.running = true
+     }
+ }
+diff --git a/modules/ClockModule.qml b/modules/ClockModule.qml
+index d5913e3..18f422d 100644
+--- a/modules/ClockModule.qml
++++ b/modules/ClockModule.qml
+@@ -8,19 +8,18 @@ Rectangle {
+ 
+     property var parentBar: null
+     property string popupName: "calendar"
+-    property var osd: null
+ 
+-    readonly property bool showingOsd: Config.osdOnClock && osd && osd.shown
+     height: Theme.barHeight
+-    width: Math.max(clockText.implicitWidth, osdText.implicitWidth) + 22
++    width: clockText.implicitWidth + 22
+     color: (mouseArea.containsMouse || (parentBar && parentBar.activePopup === popupName)) ? Theme.alpha(Theme.foreground, 0.08) : "transparent"
+     radius: Theme.moduleRadius
+ 
+     Process {
+         id: tzProc
+-        command: ["ghostty", "--class", "floating", "-e", "tzselect"]
++        command: [Config.terminalCmd, "--class", "floating", "-e", "tzselect"]
+     }
+ 
++    // Ticks once a minute; the label below is bound to it, so no extra timer is needed.
+     SystemClock {
+         id: sysClock
+         precision: SystemClock.Minutes
+@@ -28,57 +27,23 @@ Rectangle {
+ 
+     readonly property var dayNames: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+ 
+-    function formatTime() {
+-        let now = new Date();
+-        let day = root.dayNames[now.getDay()];
+-        let h = String(now.getHours()).padStart(2, '0');
+-        let m = String(now.getMinutes()).padStart(2, '0');
+-        return day + " " + h + ":" + m;
++    readonly property string timeText: {
++        const now = sysClock.date;
++        const h = String(now.getHours()).padStart(2, "0");
++        const m = String(now.getMinutes()).padStart(2, "0");
++        return root.dayNames[now.getDay()] + " " + h + ":" + m;
+     }
+ 
+     Text {
+         id: clockText
+         anchors.centerIn: parent
+-        text: root.formatTime()
+-        visible: !root.showingOsd
++        text: root.timeText
+         font.family: Theme.fontFamily
+         font.pixelSize: Theme.fontSize
+         font.bold: true
+         color: Theme.foreground
+     }
+ 
+-    Row {
+-        id: osdText
+-        anchors.centerIn: parent
+-        visible: root.showingOsd
+-        spacing: 7
+-        opacity: root.showingOsd ? 1 : 0
+-        scale: root.showingOsd ? 1 : 0.97
+-        Behavior on opacity { NumberAnimation { duration: 120 } }
+-        Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+-        Text {
+-            text: root.osd ? root.osd.glyph : ""
+-            font.family: Theme.fontFamily
+-            font.pixelSize: Theme.fontSize
+-            color: Theme.primary
+-        }
+-        Text {
+-            text: root.osd ? root.osd.label : ""
+-            font.family: Theme.fontFamily
+-            font.pixelSize: Theme.fontSizeSmall
+-            font.bold: true
+-            color: Theme.foreground
+-        }
+-    }
+-
+-    // Refresh every minute
+-    Timer {
+-        interval: 60000
+-        running: true
+-        repeat: true
+-        onTriggered: clockText.text = root.formatTime()
+-    }
+-
+     MouseArea {
+         id: mouseArea
+         anchors.fill: parent
+diff --git a/popups/BatteryPopup.qml b/popups/BatteryPopup.qml
+index 531a0e0..2bbdfa0 100644
+--- a/popups/BatteryPopup.qml
++++ b/popups/BatteryPopup.qml
+@@ -36,7 +36,7 @@ PopupBase {
+         id: setProfileProc
+         onExited: {
+             getProfileProc.running = true;
+-            Quickshell.execDetached(["quickshell", "ipc", "call", "osd", "status", "Power profile updated"]);
++            Notify.status("Power profile updated");
+         }
+     }
+ 
+diff --git a/popups/PopupBase.qml b/popups/PopupBase.qml
+index 043216b..f324788 100644
+--- a/popups/PopupBase.qml
++++ b/popups/PopupBase.qml
+@@ -21,6 +21,9 @@ PanelWindow {
+     // Edges.Right -> popup grows to the right of the module (left edges aligned)
+     // neither     -> centred under the module
+     property int popupGravity: Edges.Bottom | Edges.Left
++    // Escape closes the popup. A subclass with its own Escape behaviour (e.g. cancelling a
++    // password prompt) binds this to false while that behaviour is active.
++    property bool escapeCloses: true
+ 
+     screen: parentBar ? parentBar.screen : null
+ 
+@@ -37,7 +40,9 @@ PanelWindow {
+ 
+     WlrLayershell.layer: WlrLayer.Overlay
+     WlrLayershell.namespace: "quickshell-popup"
+-    WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
++    // Exclusive while open so the popup reliably receives Escape; the focus grab below
++    // still releases it as soon as you click anywhere outside.
++    WlrLayershell.keyboardFocus: visible ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+ 
+     function reposition() {
+         if (!anchorItem || !parentBar) return;
+@@ -66,6 +71,12 @@ PanelWindow {
+             root.parentBar.activePopup = "";
+     }
+ 
++    Shortcut {
++        sequence: "Escape"
++        enabled: root.visible && root.escapeCloses
++        onActivated: root.dismiss()
++    }
++
+     // Clicks inside the popup or on the bar are kept; anything else clears the grab.
+     HyprlandFocusGrab {
+         windows: root.parentBar ? [root, root.parentBar] : [root]
+diff --git a/popups/VolumePopup.qml b/popups/VolumePopup.qml
+index 673e253..6f6b979 100644
+--- a/popups/VolumePopup.qml
++++ b/popups/VolumePopup.qml
+@@ -225,12 +225,10 @@ PopupBase {
+                         if (!root.source || !root.source.audio) return;
+                         if (v > 0) root.source.audio.muted = false;
+                         root.source.audio.volume = v;
+-                        if (root.parentBar && root.parentBar.osd) root.parentBar.osd.show("mic");
+                     }
+                     onGlyphClicked: {
+                         if (!root.source || !root.source.audio) return;
+                         root.source.audio.muted = !root.source.audio.muted;
+-                        if (root.parentBar && root.parentBar.osd) root.parentBar.osd.show("mic");
+                     }
+                 }
+             }
+diff --git a/popups/WifiPopup.qml b/popups/WifiPopup.qml
+index 66eb7f0..e83b7b1 100644
+--- a/popups/WifiPopup.qml
++++ b/popups/WifiPopup.qml
+@@ -45,6 +45,7 @@ PopupBase {
+ 
+     // ---- connect / login state ---------------------------------------------
+     property var promptNet: null        // network waiting for a password
++    escapeCloses: promptNet === null    // while prompting, Escape only cancels the prompt
+     property var pendingNet: null       // network we asked NetworkManager to join
+     property bool pendingHadPsk: false
+     property string statusText: ""
+@@ -53,7 +54,6 @@ PopupBase {
+     function setStatus(msg, isError) {
+         root.statusText = msg;
+         root.statusIsError = isError;
+-        if (msg && root.parentBar && root.parentBar.osd) root.parentBar.osd.showStatus(msg);
+     }
+ 
+     function isOpen(net) {
+@@ -209,7 +209,6 @@ PopupBase {
+                     interactive: !root.hwBlocked
+                     onToggled: {
+                         Networking.wifiEnabled = !Networking.wifiEnabled;
+-                        if (root.parentBar && root.parentBar.osd) root.parentBar.osd.showStatus(Networking.wifiEnabled ? "Wi-Fi enabled" : "Wi-Fi disabled");
+                     }
+                 }
+             }
+diff --git a/qmldir b/qmldir
+index 0e36fb6..a9a99b1 100644
+--- a/qmldir
++++ b/qmldir
+@@ -1,10 +1,9 @@
+ singleton Config 1.0 Config.qml
+ singleton Theme 1.0 Theme.qml
++singleton Notify 1.0 Notify.qml
+ singleton Battery 1.0 Battery.qml
+ singleton Brightness 1.0 Brightness.qml
++singleton BluetoothPower 1.0 BluetoothPower.qml
+ Bar 1.0 Bar.qml
+-Osd 1.0 Osd.qml
+ Launcher 1.0 Launcher.qml
+ Settings 1.0 Settings.qml
+-singleton BluetoothPower 1.0 BluetoothPower.qml
+-NotificationCenter 1.0 NotificationCenter.qml
+\ No newline at end of file
+diff --git a/scripts/__pycache__/ocr.cpython-314.pyc b/scripts/__pycache__/ocr.cpython-314.pyc
+deleted file mode 100644
+index 003e871a48c824d9f99bf6d98a5720b8433f7b7e..0000000000000000000000000000000000000000
+GIT binary patch
+literal 0
+HcmV?d00001
+
+literal 6341
+zcmb_gU2GFq7QSPT?Xf*^;=~~d#EBi#B&NjSZwpNzEFz)g2R9vpLs^5@u?J_sKf}xf
+z67P?)t+Y)LyH2ZW32jk>O4US_x~cZ15Bq?&NQ>GRrw%0yk=j-Ju)NVih1%}Jo;&u~
+zPDo4l=Zxmg+&g#9{m!}P+<WeM(o$kVKyNPo>r@+!&=<I(5}A9s|0=wUqZ5cBx{;K9
+z5)z@*HIhboY9;M))K96u7M}g)!n^v$Xc+AdO|~ZK8HypRP?V4ijIIhv6r+dIc-+Jo
+zb{$114ESo%aibIM$o*aqI9$r@Hr~Z;Ub*yW=Q9E3h<Bj-P*<R{n@N(bQj8C2bAR9m
+zhJow%4?r=F{7`18KL<pu<EIlbFn~{kfifhc8zekNM$Z^_=K2Bz%7xs<q&c3DxRYZo
+zA{!4UH7z4>2a}fPM!3*vahQ!p9nbD(pp8q`1VbTK6cYl+iY=kxpb!j6tk4n*@(1P!
+zSr-~+L#MrNjcgJ}hIk=?`^s8jB<|MAI*F5_tV|9i!eg>wM2N8Q(3ps2X>4qix3mr?
+zVr**yI1X`9w$&3##7}aO)-!nwtzt;vcu8zcgai*iChN19g%aRkgj;NeVjL}#mY2LQ
+zc$bXprpf8ZjFfKK^MRD^`ek}3lBVKImWqcutxkU*`l1kl%N*f3R}|}javb?kQ|?0q
+z>b0Oq7xEyU@S!qvAc4?1Xcb&M>Cf|Eh$`gMl;!7lNA3%+^JBgWF`6Ifqc7s4{eeD)
+zB0l6GyIHaLEML_MdCEuh>vDq?Jq8B{U+gy&HRN7ZTii~nXzNk$8LZDb1e~y1R}r>t
+zM!z#BTRql^5pJ+@-V8VGBS1f|fqqEP&!F(4PrFi&y=4gb%qPK&Ytev?HxE!eJt%J1
+zcnIFqTZfQ8?`MO*SRr9<#DWe6Z>Ul;)aD|YceR1HRbu`=)0(<~(Tb!6--Lc^Norgv
+zsn56;H^$VD4R94PW|%|Mqqa~O_Yv9O$Z6fA>MPuylVL4v^#6dZ<Z;*-%UUw|j4FCq
+zGD_u@-h(ZCJKXoTLD7Kf!Gi|S0np4D>j`4>`ht2!(YOw5tTZbvUIBlm<%l`WT|B?u
+zIW(t{HJ&Z91{@tPQjHD)mUAQ<cf)eQj`Bi>+;B1>#DY>F78Fj06X)Wd-O)rS7!^A_
+z`93!I<vuR%0*-V=^OgP6LsMricD>T|*8XqrgJq%@DyxVU?*BguAd~}B0S_sF>7iom
+zLN#u!fdYRKur7oRQ2gZK(c|^!)(BWz-p3(W2c5*cVr=d!ho^;U;^L84j=XjFTLo1F
+zdH~(q`v|-WXujVF1zsFatN;b|6_dPO<3e+U0!cySCS(mKiFk?|v-3&qjs{~x;b4dC
+z{Nd@$b-@}FVcCFzr-d2k<&l}8S?k;ErMO^$M&PYI&5n5^uU*3QkCni&Rute^=tqIO
+zkWddF6p*lg5u-&I1t<Q}0L7DVi+Fz+N3;88gYR`J1IvWt5gjQmunBtRT>zZ-9DoqY
+zeVUx<!vcqwSG=JprcY#NZB8rT*^!BWOi0;n(UCR&f&p#DK(M7LcJ18rK0Qay5^p>I
+zLg%d7TCviq{{!)bCouEE6cxnBF0G1B%sSsA74iQcvI}ltowZr4v>%WfE43iC{pq>B
+zE1fg@E(hQ3`&MXyZ{KN5CbvP>#<(~X!BJTs<ar2WWSuBM#2}Lpu1K;rI3&vCsRS2y
+zm&kg76-T0ytm7m$1`*0oVpJw2c2tt}0Wp*iSXnm~kP<w83?-m-G!SJ^!gHAABE#@s
+zl#8>XOov7UfsIQ6T$PP#ZLIJ*EaKgv(NRQM2Pj=-_Cgo*gH;iU37CU%^qJXuyVSZw
+zTgJQY*j)=$&4hO9spYbY1-zPNDw;E8%@evu>Q>tVcIu4How2$n^vhP;)ZytTF1KW?
+z%@g`1sw72E(o^h=@6X5Pj=k$oSGIjhwSQ$sbsO(lkk0f{&+mE`DmIVzERrps<B^vt
+zD#!bl%53A^O7TV0<^{?%p_@AUS!u;>+O}l2ePXU%s<uybFICq;VRub?(;J>V-?v;+
+zHdT4k+K?%6T@`1a&NS`0M&4}dTrBBaqN{Jw^$T?U%(@xNr*!M*xNcvd?N>Z$+P+9{
+zU81e2zRAAniZ`n-RWD#0&p7vFYW6JB9czvBl^r#=Jaiz+wnW)(Q8l2cOYt;Svq-h5
+z@*ci;^yQ-q*lsfRr!$pLFH&uvo2{w#$@Zy{jM<(h?OB5c<>v{<R(MOeAJ*g9C`4y|
+z>{1H#lj>XHsqT;`G`qk}BM{Hjq96Zb<-)1%{gI8zp9YmPLnvpBTpU?n%yW&iiW8P&
+z70HUeYam`ZKL6iH`YOa*u*W@CQcdwbc8Fj|p77^m*nYgtucChJ539(JHv)wioe$9v
+zi~8~Uu8<!u@(T6m-_#a-7}}AmFoxoIQPmXiqPFSOn3C6QK>jNAZ#Y63)i3QtfEdw?
+zXajkEyw;ERc!m0lVjZ;&j$tOo>_Z-{Ps`9u$<F*dG8TO8$k*WvTH0+nSjv<2$VV0s
+zJK<!Z;#9U1pC9i|3i)*E7vA7A<Sodx%7V%mt17_?n^@a^kjfMKK1MbVVm3ZY_ze9p
+z;%Z{bRX!khML}*Kq2df5R&YLM493P(GV7QsA3>vS8V^~72|Q&r{rFd=x`3m|VsK=$
+zieTPqRQx|l4^KQxFzcBOh2wQ$-2naI&2AMjwJLx0$y5G<*V~!80SfH0-bbAvlq>>R
+z3Y<k9;5|-gZz$L+;QMi3YF#xnR0}qhpA868!H)}^wmkY*u`NOZ!2&r9xE&BBsaztk
+zM%E%uQ;+O$62Mm%(HC#m+7U-MkbjfPQ;)(OxF>Hcl9}-1Jzb%J{E35c6|WtTb;)~7
+z(dxRkB^RxPc0kG-_Zs{Dlznmphw`WjGOx7~t)abvyho~X=T^Z2r!}=#_^%#uaAgs=
+z8}H(sC24|8i{n5LQXt`Ey*J?qMLB*b5fs7>E*6Zij_yte<W<gcVK(fMDaeRO92|ZG
+zyei6uGhzUeBLM*itlU3AM@iDd$0M@l+z|8yPQ#oCK}?tpCBp0gq-pe`6i$pt0&H@~
+z3z0O%1bHrulRajPV=yShxp*YG9)RHJ$Ps2G77{)HCZ5IPN$N(VlP$Y|myV0`Iaab^
+zc#Ic9QdFkGoX7{I(6DSinFx)D=eRhW*^*Q+9EK1~Y=eW#Aq*V@VFe+wU7-*69uV+}
+zUcd@W(iqDAM2wHZ=t*mTP{arh<&J-jW&!J8CUFcV?8853+@3b?-3##Qb!(G`bJ3Pi
+zf*(ujTUw+so=sL`QCj(Ekc+qD6qd+Jd$L04W!*WYi>Bp}Ook*ODidcR?-dgUftkBT
+z)<#)~F~u>6B!fcatde_@Np_TzWK9AZLDXSkCx&A#O5@2|E-pcQ$;BZ3m4MJxFhCap
+z+pBC7u*UJMCF1c>$dut;f){_s5uvPyEE!CeZ0PLrd5`q<K~NiISqMx;J_@56yGBDS
+zFL4PBOA?^_C`_@41Ke2REbBJO20ZTpE-X`^`vBIvY=ER<fQv<B;$(KDU3fTbG%}^0
+zs%0WB6Re1Bxe&W%Lsv2eniE9$f+ZEVfZamc&0xB)J+*6c*NeZII<sh~zN&qPx<bub
+z-!We`FH@F@U#IOI*G!94?=odhQRk^C>jm?d7HevFa(L>@A5M=yvs~xA>UyX7O7rWn
+z+2CSb>jg12IypK`{P9=w%=p1&OIa#18A(Maqi?j&HqAH9*L>jo>;CKH-;IAWerUcC
+zzWH+|v-@zmeIPw>G~N7s#&T@@nR}#5SHE0hoobriajV3!SmK!3w@j}~dCz;NduFNm
+zru2rkYg=!0-lU&<s6`g%H+p2;cH36_YR~k!jIC+XIHCWtqG9H#OvR=N>a)_SWx9N7
+zPr9LFk>0yZm!=M$KRET=h2Afz@|5MgMW**Gm9M|p`f}?`Q>J{=Qu(@X45ZQYkVdpE
+zH|UaeJ&arOLG`ufYwOcH`_g5HmaCk%s@w}z?)(e<RbqKyLM7Hz&-tDyX_2m7&W`X&
+z)xH~*H>qd8q)Vr$i<Xxy(`PefjTyRWg1{R7ZQ8kQe(Stz{<&+`Yr*U5-amU|F#Xh#
+z^pU}I{n170`3Hc+lG-`BGu1KKG2L{_-0+FHVHujb&v#EnKBeov(jwaRa6bW>0Bxm9
+z9N#}^Lv-Z>q|w=wDSYGbjP-TjOy_0)Y}+FBRDLE?=1KGS_jJ(h`v=sI4RVvNyN3t)
+zPTUWc^Wkn=Pb0csX74H2U2o}Zgvv+d<{p>vBfAm5H=27r+K;ww?{#ZG-l*%{iavJh
+zpygwa7Qb)p=xf!=Q~>foVAlayydWVAiJ_?5EF1^!!ZBO~ae=)}Hn8!toPhl#!b(B_
+zx8tLk;$@04V_xxKj12^`CsLeTP?Ht0M0h01b_iq8M!+rhLUB(^5X2YAcn6v8AoCq$
+z{Tz(+)a0pDd@`Q4d*<~S%g%B01Ck{4U(=05-PirZW}^Nc!~`TgkzCZ)+$O2t9{{bB
+J>y-n@zX8P&q#OVM
+
+diff --git a/scripts/events.py b/scripts/events.py
+deleted file mode 100644
+index 4805ee9..0000000
+--- a/scripts/events.py
++++ /dev/null
+@@ -1,239 +0,0 @@
+-#!/usr/bin/env python3
+-"""Print upcoming calendar events as JSON for the Quickshell calendar popup.
+-
+-usage: events.py [--from YYYY-MM-DD] [--days N]
+-
+-Reads iCalendar data from the places desktop calendars keep it:
+-  * GNOME Calendar / Evolution local calendars   ~/.local/share/evolution/calendar/*/calendar.ics
+-  * GNOME Calendar / Evolution online accounts   ~/.cache/evolution/calendar/*/cache.db  (read-only snapshot)
+-  * vdirsyncer / khal / generic .ics folders     ~/.calendars, ~/.local/share/{vdirsyncer,khal}, ~/.config/quickshell/calendars
+-Recurring events (DAILY/WEEKLY/MONTHLY/YEARLY, INTERVAL, COUNT, UNTIL, BYDAY on weekly) are expanded.
+-"""
+-import glob
+-import json
+-import os
+-import re
+-import sqlite3
+-import sys
+-from datetime import datetime, timedelta, timezone
+-
+-try:
+-    from zoneinfo import ZoneInfo
+-except ImportError:  # pragma: no cover
+-    ZoneInfo = None
+-
+-HOME = os.path.expanduser("~")
+-ICS_GLOBS = [
+-    HOME + "/.local/share/evolution/calendar/*/calendar.ics",
+-    HOME + "/.calendars/**/*.ics",
+-    HOME + "/.local/share/vdirsyncer/**/*.ics",
+-    HOME + "/.local/share/khal/**/*.ics",
+-    HOME + "/.config/quickshell/calendars/**/*.ics",
+-]
+-DB_GLOBS = [HOME + "/.cache/evolution/calendar/*/cache.db"]
+-WEEKDAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
+-
+-
+-def read_texts():
+-    for pattern in ICS_GLOBS:
+-        for path in glob.glob(pattern, recursive=True):
+-            try:
+-                with open(path, encoding="utf-8", errors="replace") as fh:
+-                    yield fh.read()
+-            except OSError:
+-                pass
+-    for pattern in DB_GLOBS:
+-        for path in glob.glob(pattern):
+-            try:
+-                con = sqlite3.connect("file:%s?mode=ro&immutable=1" % path, uri=True)
+-                for (obj,) in con.execute("SELECT ECacheOBJ FROM ECacheObjects"):
+-                    if obj:
+-                        yield obj
+-                con.close()
+-            except Exception:
+-                pass
+-
+-
+-def unfold(text):
+-    return re.sub(r"\r?\n[ \t]", "", text).splitlines()
+-
+-
+-def split_events(text):
+-    cur = None
+-    for line in unfold(text):
+-        up = line.upper()
+-        if up.startswith("BEGIN:VEVENT"):
+-            cur = []
+-        elif up.startswith("END:VEVENT"):
+-            if cur is not None:
+-                yield cur
+-            cur = None
+-        elif cur is not None:
+-            cur.append(line)
+-
+-
+-def props(lines, name):
+-    """Return every (params, value) pair for property `name`."""
+-    found = []
+-    for line in lines:
+-        key, _, val = line.partition(":")
+-        base, *params = key.split(";")
+-        if base.upper() == name:
+-            pd = {}
+-            for p in params:
+-                if "=" in p:
+-                    k, v = p.split("=", 1)
+-                    pd[k.upper()] = v.strip('"')
+-            found.append((pd, val))
+-    return found
+-
+-
+-def unescape(s):
+-    return s.replace("\\n", " ").replace("\\N", " ").replace("\\,", ",").replace("\\;", ";").replace("\\\\", "\\")
+-
+-
+-def parse_dt(params, val):
+-    """-> (naive local datetime, all_day)"""
+-    val = val.strip()
+-    if params.get("VALUE") == "DATE" or len(val) == 8:
+-        return datetime.strptime(val[:8], "%Y%m%d"), True
+-    if val.endswith("Z"):
+-        d = datetime.strptime(val, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+-        return d.astimezone().replace(tzinfo=None), False
+-    d = datetime.strptime(val[:15], "%Y%m%dT%H%M%S")
+-    tz = params.get("TZID")
+-    if tz and ZoneInfo:
+-        try:
+-            d = d.replace(tzinfo=ZoneInfo(tz)).astimezone().replace(tzinfo=None)
+-        except Exception:
+-            pass
+-    return d, False
+-
+-
+-def add_months(d, n):
+-    m = d.month - 1 + n
+-    y = d.year + m // 12
+-    m = m % 12 + 1
+-    try:
+-        return d.replace(year=y, month=m)
+-    except ValueError:
+-        return None  # e.g. the 31st in a 30-day month: skipped, as RFC 5545 says
+-
+-
+-def nth(start, freq, interval, k):
+-    """k-th repeat of `start` (k=0 is the start itself); None when the date does not exist."""
+-    if freq == "DAILY":
+-        return start + timedelta(days=interval * k)
+-    if freq == "WEEKLY":
+-        return start + timedelta(weeks=interval * k)
+-    if freq == "MONTHLY":
+-        return add_months(start, interval * k)
+-    if freq == "YEARLY":
+-        try:
+-            return start.replace(year=start.year + interval * k)
+-        except ValueError:
+-            return None
+-    return None
+-
+-
+-def expand(start, rrule, exdates, duration, win_start, win_end):
+-    def visible(s):
+-        return s + duration >= win_start and s < win_end and s not in exdates and s.date() not in exdates
+-
+-    if not rrule:
+-        return [start] if visible(start) else []
+-
+-    parts = dict(p.split("=", 1) for p in rrule.split(";") if "=" in p)
+-    freq = parts.get("FREQ", "")
+-    interval = max(1, int(parts.get("INTERVAL", "1")))
+-    count = int(parts["COUNT"]) if "COUNT" in parts else None
+-    until = None
+-    if "UNTIL" in parts:
+-        until, all_day = parse_dt({}, parts["UNTIL"])
+-        if all_day:
+-            until = until.replace(hour=23, minute=59, second=59)
+-    byday = [d[-2:] for d in parts.get("BYDAY", "").split(",") if d[-2:] in WEEKDAYS]
+-
+-    out, n, k, guard = [], 0, 0, 0
+-    cur = start
+-    while cur is None or cur < win_end:
+-        guard += 1
+-        if guard > 6000:
+-            break
+-        if cur is None:                       # e.g. the 31st in a 30-day month: skipped (RFC 5545)
+-            k += 1
+-            cur = nth(start, freq, interval, k)
+-            continue
+-        if freq == "WEEKLY" and byday:
+-            monday = cur - timedelta(days=cur.weekday())
+-            cands = sorted(datetime.combine((monday + timedelta(days=WEEKDAYS.index(d))).date(), start.time()) for d in byday)
+-            cands = [c for c in cands if c >= start]
+-        else:
+-            cands = [cur]
+-        stop = False
+-        for c in cands:
+-            if (until and c > until) or (count is not None and n >= count):
+-                stop = True
+-                break
+-            n += 1
+-            if visible(c):
+-                out.append(c)
+-        if stop or freq not in ("DAILY", "WEEKLY", "MONTHLY", "YEARLY"):
+-            break
+-        k += 1
+-        cur = nth(start, freq, interval, k)
+-    return out
+-
+-
+-def main():
+-    args = sys.argv[1:]
+-    start_day = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+-    days = 60
+-    for i, a in enumerate(args):
+-        if a == "--from" and i + 1 < len(args):
+-            start_day = datetime.strptime(args[i + 1], "%Y-%m-%d")
+-        elif a == "--days" and i + 1 < len(args):
+-            days = int(args[i + 1])
+-    win_start, win_end = start_day, start_day + timedelta(days=days)
+-
+-    seen, result = set(), []
+-    for text in read_texts():
+-        for ev in split_events(text):
+-            try:
+-                ds = props(ev, "DTSTART")
+-                if not ds:
+-                    continue
+-                start, all_day = parse_dt(*ds[0])
+-                de = props(ev, "DTEND")
+-                if de:
+-                    end, _ = parse_dt(*de[0])
+-                    duration = max(end - start, timedelta(0))
+-                else:
+-                    duration = timedelta(days=1) if all_day else timedelta(0)
+-                title = unescape(props(ev, "SUMMARY")[0][1]) if props(ev, "SUMMARY") else "(no title)"
+-                rr = props(ev, "RRULE")
+-                exdates = set()
+-                for pd, val in props(ev, "EXDATE"):
+-                    for v in val.split(","):
+-                        d, ad = parse_dt(pd, v)
+-                        exdates.add(d.date() if ad else d)
+-                for occ in expand(start, rr[0][1] if rr else None, exdates, duration, win_start, win_end):
+-                    key = (title, occ)
+-                    if key in seen:
+-                        continue
+-                    seen.add(key)
+-                    result.append({
+-                        "title": title,
+-                        "start": occ.strftime("%Y-%m-%dT%H:%M:%S"),
+-                        "end": (occ + duration).strftime("%Y-%m-%dT%H:%M:%S"),
+-                        "allDay": all_day,
+-                    })
+-            except Exception:
+-                continue
+-
+-    result.sort(key=lambda e: e["start"])
+-    json.dump(result[:400], sys.stdout)
+-
+-
+-if __name__ == "__main__":
+-    main()
+diff --git a/scripts/file_index.py b/scripts/file_index.py
+deleted file mode 100644
+index 03d9c6d..0000000
+--- a/scripts/file_index.py
++++ /dev/null
+@@ -1,1042 +0,0 @@
+-#!/usr/bin/env python3
+-"""
+-Exact Sparse TF-IDF Vector + SQLite FTS5/BM25 file & image content indexer for Quickshell Launcher.
+-- Two-phase sync:
+-  1. `sync` indexes filenames, text/code/Markdown/Typst/PDF/Office docs synchronously in tens of ms,
+-     reuses cached image OCR + VLM captions, and detaches a low-priority `sync-images` worker for new images.
+-  2. `sync-images` runs at `nice -n 19` in batches, extracting text via RapidOCR and visual descriptions
+-     via `image_caption.py` (SmolVLM-256M or tiny-image-captioning), committing progressively.
+-- Guardrails skip tiny UI icons (< 10 KB or < 128x128 px) and theme/cursor/asset folders.
+-"""
+-import argparse
+-import difflib
+-import json
+-import math
+-import os
+-import re
+-import signal
+-import sqlite3
+-import struct
+-import subprocess
+-import sys
+-import zipfile
+-import xml.etree.ElementTree as ET
+-from collections import Counter
+-from pathlib import Path
+-
+-HOME = Path.home()
+-STATE_DIR = HOME / ".local/state/quickshell-launcher"
+-DB_PATH = STATE_DIR / "content-index.db"
+-CACHE_TXT = STATE_DIR / "file-index.txt"
+-IMG_LOCK_PATH = STATE_DIR / "image-sync.pid"
+-
+-SCRIPT_DIR = Path(__file__).resolve().parent
+-CAPTION_SCRIPT = SCRIPT_DIR / "image_caption.py"
+-RAPIDOCR_PYTHON = HOME / ".local/share/rapidocr-venv/bin/python"
+-CAPTION_PYTHON = HOME / ".local/share/caption-venv/bin/python"
+-
+-SEARCH_ROOTS = [
+-    HOME / "Documents",
+-    HOME / "Downloads",
+-    HOME / "Pictures",
+-    HOME / "Videos",
+-    HOME / "Projects",
+-]
+-
+-SKIP_DIRS = {
+-    ".git", "node_modules", "__pycache__", ".venv", "venv",
+-    "target", "build", ".cache", "dist", ".next", ".cargo",
+-}
+-
+-IMAGE_SKIP_DIRS = {
+-    "assets", "asset", "cursors", "cursor", "icons", "icon",
+-    "themes", "theme", "sprites", "thumbnails", ".thumbnails",
+-}
+-
+-TEXT_EXTS = {
+-    ".txt", ".md", ".markdown", ".rst", ".org", ".tex", ".typ",
+-    ".py", ".c", ".cpp", ".cc", ".h", ".hpp", ".go", ".rs",
+-    ".ts", ".tsx", ".js", ".jsx", ".v", ".odin", ".java", ".kt",
+-    ".sh", ".fish", ".zsh", ".bash", ".qml", ".json", ".toml",
+-    ".yaml", ".yml", ".csv", ".tsv", ".html", ".htm", ".xml",
+-    ".css", ".scss", ".sql", ".ini", ".conf", ".cfg", ".log",
+-}
+-
+-XML_ZIP_EXTS = {".docx", ".odt", ".epub", ".pptx", ".xlsx"}
+-IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".avif"}
+-
+-SCHEMA_VERSION = 4
+-MAX_DOC_TERMS = 600
+-MAX_EXTRACT_BYTES = 15 * 1024 * 1024
+-MIN_IMAGE_BYTES = 10 * 1024
+-MAX_IMAGE_BYTES = 25 * 1024 * 1024
+-MIN_IMAGE_DIM = 128
+-MAX_TEXT_CHARS = 120_000
+-TOKEN_RE = re.compile(r"[a-z0-9]{2,}")
+-
+-STOPWORDS = {
+-    "the", "and", "for", "with", "this", "that", "from", "are", "was", "were",
+-    "have", "has", "had", "not", "but", "you", "your", "can", "will", "into",
+-    "also", "than", "then", "them", "they", "their", "there", "here", "what",
+-    "when", "where", "which", "while", "about", "after", "before", "between",
+-    "each", "other", "some", "such", "only", "same", "very", "just", "more",
+-    "most", "use", "used", "using", "its", "out", "all", "any", "both", "few",
+-    "how", "why", "who", "whom", "been", "being", "does", "did", "doing",
+-    "would", "could", "should", "may", "might", "must", "shall", "over",
+-    "under", "again", "further", "once", "during", "through", "above", "below",
+-    "import", "def", "return", "const", "let", "var", "function", "class",
+-    "true", "false", "null", "none", "void", "int", "str", "self", "public",
+-    "private", "static", "export", "default", "include", "endif", "ifdef",
+-}
+-
+-
+-def connect_db() -> sqlite3.Connection:
+-    STATE_DIR.mkdir(parents=True, exist_ok=True)
+-    conn = sqlite3.connect(str(DB_PATH), timeout=15.0)
+-    conn.execute("PRAGMA journal_mode=WAL;")
+-    conn.execute("PRAGMA synchronous=NORMAL;")
+-
+-    ver = conn.execute("PRAGMA user_version;").fetchone()[0]
+-    if ver != SCHEMA_VERSION:
+-        conn.executescript(
+-            """
+-            DROP TABLE IF EXISTS files;
+-            DROP TABLE IF EXISTS files_fts;
+-            DROP TABLE IF EXISTS file_vectors;
+-            DROP TABLE IF EXISTS doc_features;
+-            DROP TABLE IF EXISTS doc_terms;
+-            DROP TABLE IF EXISTS term_postings;
+-            DROP TABLE IF EXISTS idf_stats;
+-            DROP TABLE IF EXISTS doc_meta;
+-            DROP TABLE IF EXISTS image_cache;
+-            """
+-        )
+-        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION};")
+-
+-    conn.execute(
+-        """
+-        CREATE TABLE IF NOT EXISTS files (
+-            path TEXT PRIMARY KEY,
+-            mtime INTEGER NOT NULL,
+-            size INTEGER NOT NULL
+-        );
+-        """
+-    )
+-    conn.execute(
+-        """
+-        CREATE VIRTUAL TABLE IF NOT EXISTS files_fts USING fts5(
+-            path UNINDEXED,
+-            title,
+-            body,
+-            tokenize='porter unicode61'
+-        );
+-        """
+-    )
+-    conn.execute(
+-        """
+-        CREATE TABLE IF NOT EXISTS doc_terms (
+-            path TEXT NOT NULL,
+-            term TEXT NOT NULL,
+-            tf_w REAL NOT NULL,
+-            PRIMARY KEY (path, term)
+-        );
+-        """
+-    )
+-    conn.execute(
+-        """
+-        CREATE TABLE IF NOT EXISTS term_postings (
+-            term TEXT NOT NULL,
+-            path TEXT NOT NULL,
+-            weight REAL NOT NULL,
+-            PRIMARY KEY (term, path)
+-        );
+-        """
+-    )
+-    conn.execute(
+-        """
+-        CREATE TABLE IF NOT EXISTS idf_stats (
+-            term TEXT PRIMARY KEY,
+-            idf REAL NOT NULL
+-        );
+-        """
+-    )
+-    conn.execute(
+-        """
+-        CREATE TABLE IF NOT EXISTS doc_meta (
+-            path TEXT PRIMARY KEY,
+-            has_body INTEGER NOT NULL
+-        );
+-        """
+-    )
+-    conn.execute(
+-        """
+-        CREATE TABLE IF NOT EXISTS image_cache (
+-            path TEXT PRIMARY KEY,
+-            mtime INTEGER NOT NULL,
+-            size INTEGER NOT NULL,
+-            ocr_text TEXT NOT NULL DEFAULT '',
+-            caption_text TEXT NOT NULL DEFAULT ''
+-        );
+-        """
+-    )
+-    return conn
+-
+-
+-def get_image_dimensions(path: Path) -> tuple[int, int] | None:
+-    """Fast header-only image dimension parser (PNG, GIF, JPEG, WEBP) with zero dependencies."""
+-    try:
+-        with open(path, "rb") as f:
+-            head = f.read(32)
+-            if len(head) < 16:
+-                return None
+-            # PNG
+-            if head[:8] == b"\x89PNG\r\n\x1a\n" and len(head) >= 24:
+-                w, h = struct.unpack(">II", head[16:24])
+-                return int(w), int(h)
+-            # GIF
+-            if head[:6] in (b"GIF87a", b"GIF89a"):
+-                w, h = struct.unpack("<HH", head[6:10])
+-                return int(w), int(h)
+-            # WEBP
+-            if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+-                chunk = head[12:16]
+-                if chunk == b"VP8X" and len(head) >= 30:
+-                    w = 1 + int.from_bytes(head[24:27], "little")
+-                    h = 1 + int.from_bytes(head[27:30], "little")
+-                    return w, h
+-                if chunk == b"VP8 " and len(head) >= 30:
+-                    w, h = struct.unpack("<HH", head[26:30])
+-                    return w & 0x3FFF, h & 0x3FFF
+-                if chunk == b"VP8L" and len(head) >= 25:
+-                    b0, b1, b2, b3 = head[21:25]
+-                    w = 1 + (((b1 & 0x3F) << 8) | b0)
+-                    h = 1 + (((b3 & 0x0F) << 10) | (b2 << 2) | ((b1 & 0xC0) >> 6))
+-                    return w, h
+-            # JPEG
+-            if head[:2] == b"\xff\xd8":
+-                f.seek(2)
+-                while True:
+-                    b = f.read(1)
+-                    if not b:
+-                        break
+-                    while b == b"\xff":
+-                        b = f.read(1)
+-                    if not b:
+-                        break
+-                    marker = b[0]
+-                    if marker in (0xD8, 0xD9, 0x01) or (0xD0 <= marker <= 0xD7):
+-                        continue
+-                    seg_len_bytes = f.read(2)
+-                    if len(seg_len_bytes) < 2:
+-                        break
+-                    seg_len = struct.unpack(">H", seg_len_bytes)[0]
+-                    if marker in (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF):
+-                        sof = f.read(5)
+-                        if len(sof) == 5:
+-                            h, w = struct.unpack(">HH", sof[1:5])
+-                            return int(w), int(h)
+-                        break
+-                    f.seek(seg_len - 2, os.SEEK_CUR)
+-    except Exception:
+-        return None
+-    return None
+-
+-
+-def is_indexable_image(path: Path, size: int) -> bool:
+-    if path.suffix.lower() not in IMAGE_EXTS:
+-        return False
+-    if size < MIN_IMAGE_BYTES or size > MAX_IMAGE_BYTES:
+-        return False
+-    lower_parts = {part.lower() for part in path.parent.parts}
+-    if lower_parts & IMAGE_SKIP_DIRS:
+-        return False
+-    dims = get_image_dimensions(path)
+-    if dims is not None:
+-        w, h = dims
+-        if w < MIN_IMAGE_DIM or h < MIN_IMAGE_DIM:
+-            return False
+-    return True
+-
+-
+-def compose_image_body(caption_text: str, ocr_text: str) -> str:
+-    parts = []
+-    cap = caption_text.strip()
+-    ocr = ocr_text.strip()
+-    if cap:
+-        parts.append(f"[Caption] {cap}")
+-    if ocr:
+-        parts.append(f"[OCR] {ocr}")
+-    return "\n".join(parts)
+-
+-
+-def tokenize_content(text: str) -> list[str]:
+-    raw = TOKEN_RE.findall(text.lower())
+-    filtered = [t for t in raw if t not in STOPWORDS]
+-    return filtered if filtered else raw
+-
+-
+-def extract_doc_terms(title: str, body: str, caption_text: str = "") -> dict[str, float]:
+-    """Extract sublinear TF weights for exact unigrams, bigrams, and visual captions."""
+-    title_toks = tokenize_content(title)
+-    body_toks = tokenize_content(body)
+-    cap_toks = tokenize_content(caption_text) if caption_text else []
+-
+-    tf: Counter[str] = Counter()
+-    for tok in title_toks:
+-        tf[f"w:{tok}"] += 3.5
+-    for i in range(len(title_toks) - 1):
+-        tf[f"b:{title_toks[i]}_{title_toks[i+1]}"] += 3.0
+-
+-    for tok in cap_toks:
+-        tf[f"w:{tok}"] += 2.2
+-    for i in range(len(cap_toks) - 1):
+-        tf[f"b:{cap_toks[i]}_{cap_toks[i+1]}"] += 2.0
+-
+-    for tok in body_toks:
+-        tf[f"w:{tok}"] += 1.0
+-    for i in range(len(body_toks) - 1):
+-        tf[f"b:{body_toks[i]}_{body_toks[i+1]}"] += 1.6
+-
+-    weighted = {
+-        term: round(1.0 + math.log(val), 4)
+-        for term, val in tf.items()
+-        if val > 0
+-    }
+-    if len(weighted) > MAX_DOC_TERMS:
+-        top = sorted(weighted.items(), key=lambda kv: kv[1], reverse=True)[:MAX_DOC_TERMS]
+-        weighted = dict(top)
+-    return weighted
+-
+-
+-def rebuild_sparse_index(conn: sqlite3.Connection) -> None:
+-    """Recompute corpus IDF weights and L2-normalized sparse postings."""
+-    total_docs = conn.execute("SELECT COUNT(*) FROM doc_meta").fetchone()[0]
+-    if total_docs == 0:
+-        conn.execute("DELETE FROM idf_stats")
+-        conn.execute("DELETE FROM term_postings")
+-        return
+-
+-    has_body_map = dict(conn.execute("SELECT path, has_body FROM doc_meta").fetchall())
+-
+-    df_rows = conn.execute("SELECT term, COUNT(*) FROM doc_terms GROUP BY term").fetchall()
+-    idf_map: dict[str, float] = {}
+-    for term, df in df_rows:
+-        idf_map[term] = round(1.0 + math.log((total_docs + 1.0) / (df + 1.0)), 4)
+-
+-    conn.execute("DELETE FROM idf_stats")
+-    conn.executemany("INSERT INTO idf_stats (term, idf) VALUES (?, ?)", list(idf_map.items()))
+-
+-    doc_rows = conn.execute("SELECT path, term, tf_w FROM doc_terms ORDER BY path").fetchall()
+-    conn.execute("DELETE FROM term_postings")
+-
+-    postings_batch: list[tuple[str, str, float]] = []
+-    cur_path = None
+-    cur_items: list[tuple[str, float]] = []
+-
+-    def flush_doc(p: str, items: list[tuple[str, float]]) -> None:
+-        if not items:
+-            return
+-        sq_sum = sum(w * w for _, w in items)
+-        raw_norm = math.sqrt(sq_sum)
+-        min_norm = 2.5 if has_body_map.get(p, 0) else 7.0
+-        norm = max(raw_norm, min_norm)
+-        inv = 1.0 / norm
+-        for t, w in items:
+-            postings_batch.append((t, p, round(w * inv, 5)))
+-
+-    for path, term, tf_w in doc_rows:
+-        if path != cur_path:
+-            if cur_path is not None:
+-                flush_doc(cur_path, cur_items)
+-            cur_path = path
+-            cur_items = []
+-        idf = idf_map.get(term, 1.0)
+-        cur_items.append((term, tf_w * idf))
+-
+-    if cur_path is not None:
+-        flush_doc(cur_path, cur_items)
+-
+-    conn.executemany(
+-        "INSERT INTO term_postings (term, path, weight) VALUES (?, ?, ?)",
+-        postings_batch,
+-    )
+-
+-
+-def extract_pdf_text(path: Path) -> str:
+-    try:
+-        proc = subprocess.run(
+-            ["pdftotext", "-q", "-enc", "UTF-8", str(path), "-"],
+-            capture_output=True,
+-            text=True,
+-            timeout=8,
+-            check=False,
+-        )
+-        if proc.returncode == 0 and proc.stdout:
+-            return proc.stdout[:MAX_TEXT_CHARS]
+-    except Exception:
+-        pass
+-    return ""
+-
+-
+-def extract_xml_zip_text(path: Path) -> str:
+-    try:
+-        chunks = []
+-        total = 0
+-        with zipfile.ZipFile(path, "r") as zf:
+-            for name in zf.namelist():
+-                if not name.endswith(".xml"):
+-                    continue
+-                data = zf.read(name)
+-                root = ET.fromstring(data)
+-                for elem in root.iter():
+-                    if elem.text and elem.text.strip():
+-                        t = elem.text.strip()
+-                        chunks.append(t)
+-                        total += len(t)
+-                        if total >= MAX_TEXT_CHARS:
+-                            return " ".join(chunks)[:MAX_TEXT_CHARS]
+-        return " ".join(chunks)[:MAX_TEXT_CHARS]
+-    except Exception:
+-        return ""
+-
+-
+-def extract_text(path: Path, size: int) -> str:
+-    if size <= 0 or size > MAX_EXTRACT_BYTES:
+-        return ""
+-    ext = path.suffix.lower()
+-    if ext == ".pdf":
+-        return extract_pdf_text(path)
+-    if ext in XML_ZIP_EXTS:
+-        return extract_xml_zip_text(path)
+-    if ext in TEXT_EXTS:
+-        try:
+-            return path.read_text(encoding="utf-8", errors="ignore")[:MAX_TEXT_CHARS]
+-        except Exception:
+-            return ""
+-    return ""
+-
+-
+-def walk_files(max_depth: int = 6, max_results: int = 5000) -> list[tuple[Path, int, int, bool]]:
+-    found = []
+-    for root in SEARCH_ROOTS:
+-        if not root.exists():
+-            continue
+-        base_depth = len(root.parts)
+-        for dirpath, dirnames, filenames in os.walk(root):
+-            cur = Path(dirpath)
+-            depth = len(cur.parts) - base_depth
+-            dirnames[:] = [
+-                d for d in dirnames
+-                if d not in SKIP_DIRS and not d.startswith(".")
+-            ]
+-            if depth > 0:
+-                try:
+-                    st = cur.stat()
+-                    found.append((cur, int(st.st_mtime), 0, True))
+-                except OSError:
+-                    pass
+-            if depth >= max_depth:
+-                dirnames[:] = []
+-            for fn in filenames:
+-                if fn.startswith("."):
+-                    continue
+-                fp = cur / fn
+-                try:
+-                    st = fp.stat()
+-                    found.append((fp, int(st.st_mtime), int(st.st_size), False))
+-                except OSError:
+-                    continue
+-                if len(found) >= max_results:
+-                    return found
+-    return found
+-
+-
+-def is_pid_alive(pid: int) -> bool:
+-    if pid <= 0:
+-        return False
+-    try:
+-        os.kill(pid, 0)
+-        return True
+-    except OSError:
+-        return False
+-
+-
+-def is_image_sync_running() -> bool:
+-    if not IMG_LOCK_PATH.is_file():
+-        return False
+-    try:
+-        pid = int(IMG_LOCK_PATH.read_text(encoding="utf-8").strip())
+-        if is_pid_alive(pid):
+-            return True
+-    except Exception:
+-        pass
+-    try:
+-        IMG_LOCK_PATH.unlink(missing_ok=True)
+-    except Exception:
+-        pass
+-    return False
+-
+-
+-def spawn_background_image_sync() -> bool:
+-    if is_image_sync_running():
+-        return False
+-    try:
+-        subprocess.Popen(
+-            [sys.executable, str(Path(__file__).resolve()), "sync-images"],
+-            stdout=subprocess.DEVNULL,
+-            stderr=subprocess.DEVNULL,
+-            stdin=subprocess.DEVNULL,
+-            start_new_session=True,
+-            close_fds=True,
+-        )
+-        return True
+-    except Exception:
+-        return False
+-
+-
+-def cmd_sync(spawn_images: bool = True) -> None:
+-    conn = connect_db()
+-    entries = walk_files()
+-
+-    STATE_DIR.mkdir(parents=True, exist_ok=True)
+-    with open(CACHE_TXT, "w", encoding="utf-8") as cf:
+-        for fp, _mt, _sz, is_dir in entries:
+-            cf.write(f"{fp}/\n" if is_dir else f"{fp}\n")
+-
+-    existing = {
+-        row[0]: (row[1], row[2])
+-        for row in conn.execute("SELECT path, mtime, size FROM files")
+-    }
+-    img_cached = {
+-        row[0]: (row[1], row[2], row[3], row[4])
+-        for row in conn.execute("SELECT path, mtime, size, ocr_text, caption_text FROM image_cache")
+-    }
+-    current_paths = {str(fp) for fp, _, _, _ in entries}
+-
+-    removed = [p for p in existing if p not in current_paths]
+-    if removed:
+-        conn.executemany("DELETE FROM files WHERE path = ?", [(p,) for p in removed])
+-        conn.executemany("DELETE FROM files_fts WHERE path = ?", [(p,) for p in removed])
+-        conn.executemany("DELETE FROM doc_terms WHERE path = ?", [(p,) for p in removed])
+-        conn.executemany("DELETE FROM term_postings WHERE path = ?", [(p,) for p in removed])
+-        conn.executemany("DELETE FROM doc_meta WHERE path = ?", [(p,) for p in removed])
+-        conn.executemany("DELETE FROM image_cache WHERE path = ?", [(p,) for p in removed])
+-
+-    updated = 0
+-    pending_images = 0
+-
+-    for fp, mtime, size, is_dir in entries:
+-        p_str = str(fp)
+-        prev = existing.get(p_str)
+-        is_img = (not is_dir) and is_indexable_image(fp, size)
+-
+-        if is_img:
+-            ic = img_cached.get(p_str)
+-            if ic is not None and ic[0] == mtime and ic[1] == size:
+-                # Already OCR'd / captioned: reuse cached metadata if files table wasn't synced yet
+-                if prev == (mtime, size):
+-                    continue
+-                ocr_txt, cap_txt = ic[2], ic[3]
+-                body = compose_image_body(cap_txt, ocr_txt)
+-                has_body = 1 if len(body) > 0 else 0
+-                terms = extract_doc_terms(fp.name, ocr_txt, caption_text=cap_txt)
+-            else:
+-                pending_images += 1
+-                if prev == (mtime, size):
+-                    continue
+-                # Index filename immediately while queuing image for background OCR + VLM
+-                body = ""
+-                has_body = 0
+-                terms = extract_doc_terms(fp.name, "")
+-        else:
+-            if prev == (mtime, size):
+-                continue
+-            body = "" if is_dir else extract_text(fp, size)
+-            has_body = 1 if len(body.strip()) > 0 else 0
+-            terms = extract_doc_terms(fp.name, body)
+-
+-        title = fp.name
+-        conn.execute("DELETE FROM files_fts WHERE path = ?", (p_str,))
+-        conn.execute(
+-            "INSERT INTO files_fts (path, title, body) VALUES (?, ?, ?)",
+-            (p_str, title, body),
+-        )
+-        conn.execute("DELETE FROM doc_terms WHERE path = ?", (p_str,))
+-        conn.executemany(
+-            "INSERT INTO doc_terms (path, term, tf_w) VALUES (?, ?, ?)",
+-            [(p_str, t, w) for t, w in terms.items()],
+-        )
+-        conn.execute(
+-            "INSERT OR REPLACE INTO doc_meta (path, has_body) VALUES (?, ?)",
+-            (p_str, has_body),
+-        )
+-        conn.execute(
+-            "INSERT OR REPLACE INTO files (path, mtime, size) VALUES (?, ?, ?)",
+-            (p_str, mtime, size),
+-        )
+-        updated += 1
+-        if updated % 100 == 0:
+-            conn.commit()
+-
+-    postings_count = conn.execute("SELECT COUNT(*) FROM term_postings").fetchone()[0]
+-    if updated > 0 or removed or (len(entries) > 0 and postings_count == 0):
+-        rebuild_sparse_index(conn)
+-
+-    conn.commit()
+-    conn.close()
+-
+-    bg_spawned = False
+-    if spawn_images and pending_images > 0:
+-        bg_spawned = spawn_background_image_sync()
+-
+-    print(
+-        json.dumps(
+-            {
+-                "total": len(entries),
+-                "updated": updated,
+-                "removed": len(removed),
+-                "pending_images": pending_images,
+-                "image_worker_started": bg_spawned,
+-            }
+-        )
+-    )
+-
+-
+-def run_batch_ocr(paths: list[str]) -> dict[str, str]:
+-    """Run RapidOCR once over a batch of image paths using the isolated rapidocr-venv."""
+-    if not paths or not RAPIDOCR_PYTHON.is_file():
+-        return {}
+-    worker_code = (
+-        "import json, sys\n"
+-        "from rapidocr_onnxruntime import RapidOCR\n"
+-        "paths = json.loads(sys.stdin.read() or '[]')\n"
+-        "ocr = RapidOCR()\n"
+-        "out = {}\n"
+-        "for p in paths:\n"
+-        "    try:\n"
+-        "        res, _ = ocr(p)\n"
+-        "        if res:\n"
+-        "            out[p] = ' '.join(item[1].strip() for item in res if item and len(item) >= 2 and item[1])\n"
+-        "    except Exception:\n"
+-        "        pass\n"
+-        "print(json.dumps(out))\n"
+-    )
+-    try:
+-        proc = subprocess.run(
+-            [str(RAPIDOCR_PYTHON), "-c", worker_code],
+-            input=json.dumps(paths),
+-            capture_output=True,
+-            text=True,
+-            timeout=120,
+-            check=False,
+-        )
+-        if proc.returncode == 0 and proc.stdout.strip():
+-            parsed = json.loads(proc.stdout)
+-            return parsed if isinstance(parsed, dict) else {}
+-    except Exception:
+-        pass
+-    return {}
+-
+-
+-def run_batch_captions(paths: list[str]) -> dict[str, str]:
+-    """Run offline VLM captioning over a batch of images via image_caption.py."""
+-    if not paths or not CAPTION_SCRIPT.is_file():
+-        return {}
+-    py_bin = str(CAPTION_PYTHON) if CAPTION_PYTHON.is_file() else sys.executable
+-    try:
+-        proc = subprocess.run(
+-            [py_bin, str(CAPTION_SCRIPT)],
+-            input=json.dumps(paths),
+-            capture_output=True,
+-            text=True,
+-            timeout=300,
+-            check=False,
+-        )
+-        if proc.returncode == 0 and proc.stdout.strip():
+-            parsed = json.loads(proc.stdout)
+-            return parsed if isinstance(parsed, dict) else {}
+-    except Exception:
+-        pass
+-    return {}
+-
+-
+-def cmd_sync_images(retag: bool = False, limit: int = 0) -> None:
+-    if is_image_sync_running():
+-        print(json.dumps({"status": "already_running"}))
+-        return
+-
+-    STATE_DIR.mkdir(parents=True, exist_ok=True)
+-    IMG_LOCK_PATH.write_text(str(os.getpid()), encoding="utf-8")
+-
+-    try:
+-        try:
+-            os.nice(19)
+-        except Exception:
+-            pass
+-
+-        conn = connect_db()
+-        entries = walk_files()
+-        img_cached = {
+-            row[0]: (row[1], row[2], row[3], row[4])
+-            for row in conn.execute("SELECT path, mtime, size, ocr_text, caption_text FROM image_cache")
+-        }
+-
+-        queue: list[tuple[Path, int, int, bool, bool]] = []
+-        for fp, mtime, size, is_dir in entries:
+-            if is_dir or not is_indexable_image(fp, size):
+-                continue
+-            p_str = str(fp)
+-            ic = img_cached.get(p_str)
+-            if ic is None or ic[0] != mtime or ic[1] != size:
+-                queue.append((fp, mtime, size, True, True))
+-            elif retag and not ic[3].strip():
+-                queue.append((fp, mtime, size, False, True))
+-
+-        if limit > 0:
+-            queue = queue[:limit]
+-
+-        processed = 0
+-        batch_size = 8
+-
+-        for i in range(0, len(queue), batch_size):
+-            batch = queue[i : i + batch_size]
+-            ocr_targets = [str(fp) for fp, _, _, need_ocr, _ in batch if need_ocr]
+-            cap_targets = [str(fp) for fp, _, _, _, need_cap in batch if need_cap]
+-
+-            ocr_map = run_batch_ocr(ocr_targets)
+-            cap_map = run_batch_captions(cap_targets)
+-
+-            for fp, mtime, size, need_ocr, need_cap in batch:
+-                p_str = str(fp)
+-                prev_ic = img_cached.get(p_str)
+-                ocr_txt = ocr_map.get(p_str, "") if need_ocr else (prev_ic[2] if prev_ic else "")
+-                cap_txt = cap_map.get(p_str, "") if need_cap else (prev_ic[3] if prev_ic else "")
+-
+-                body = compose_image_body(cap_txt, ocr_txt)
+-                has_body = 1 if len(body) > 0 else 0
+-                terms = extract_doc_terms(fp.name, ocr_txt, caption_text=cap_txt)
+-
+-                conn.execute(
+-                    """
+-                    INSERT OR REPLACE INTO image_cache (path, mtime, size, ocr_text, caption_text)
+-                    VALUES (?, ?, ?, ?, ?)
+-                    """,
+-                    (p_str, mtime, size, ocr_txt, cap_txt),
+-                )
+-                conn.execute("DELETE FROM files_fts WHERE path = ?", (p_str,))
+-                conn.execute(
+-                    "INSERT INTO files_fts (path, title, body) VALUES (?, ?, ?)",
+-                    (p_str, fp.name, body),
+-                )
+-                conn.execute("DELETE FROM doc_terms WHERE path = ?", (p_str,))
+-                conn.executemany(
+-                    "INSERT INTO doc_terms (path, term, tf_w) VALUES (?, ?, ?)",
+-                    [(p_str, t, w) for t, w in terms.items()],
+-                )
+-                conn.execute(
+-                    "INSERT OR REPLACE INTO doc_meta (path, has_body) VALUES (?, ?)",
+-                    (p_str, has_body),
+-                )
+-                conn.execute(
+-                    "INSERT OR REPLACE INTO files (path, mtime, size) VALUES (?, ?, ?)",
+-                    (p_str, mtime, size),
+-                )
+-                processed += 1
+-
+-            rebuild_sparse_index(conn)
+-            conn.commit()
+-
+-        conn.close()
+-        print(json.dumps({"status": "done", "processed": processed}))
+-    finally:
+-        try:
+-            IMG_LOCK_PATH.unlink(missing_ok=True)
+-        except Exception:
+-            pass
+-
+-
+-def expand_query_terms(conn: sqlite3.Connection, q_tokens: list[str]) -> tuple[dict[str, float], dict[str, set[str]]]:
+-    """Build L2-normalized query vector over exact vocabulary terms + collision-free typo/prefix recovery."""
+-    raw_weights: dict[str, float] = {}
+-    term_slots: dict[str, set[str]] = {}
+-
+-    unique_toks = list(dict.fromkeys(q_tokens))
+-    for tok in unique_toks:
+-        key = f"w:{tok}"
+-        row = conn.execute("SELECT idf FROM idf_stats WHERE term = ?", (key,)).fetchone()
+-        if row is not None:
+-            raw_weights[key] = float(row[0])
+-            term_slots.setdefault(key, set()).add(tok)
+-        elif len(tok) >= 4:
+-            prefix = tok[:2]
+-            cands = conn.execute(
+-                "SELECT term, idf FROM idf_stats WHERE term LIKE ? LIMIT 400",
+-                (f"w:{prefix}%",),
+-            ).fetchall()
+-            scored_cands: list[tuple[float, str, float]] = []
+-            for cand_term, idf in cands:
+-                cand_word = cand_term[2:]
+-                if cand_word.startswith(tok):
+-                    sim = 0.92
+-                else:
+-                    if abs(len(cand_word) - len(tok)) > 3:
+-                        continue
+-                    sim = difflib.SequenceMatcher(None, tok, cand_word).ratio()
+-                if sim >= 0.78:
+-                    scored_cands.append((sim, cand_term, float(idf)))
+-            scored_cands.sort(reverse=True)
+-            for sim, cand_term, idf in scored_cands[:3]:
+-                w = idf * 0.85 * sim
+-                raw_weights[cand_term] = max(raw_weights.get(cand_term, 0.0), w)
+-                term_slots.setdefault(cand_term, set()).add(tok)
+-
+-    for i in range(len(q_tokens) - 1):
+-        b_key = f"b:{q_tokens[i]}_{q_tokens[i+1]}"
+-        row = conn.execute("SELECT idf FROM idf_stats WHERE term = ?", (b_key,)).fetchone()
+-        if row is not None:
+-            raw_weights[b_key] = float(row[0]) * 1.35
+-
+-    norm = math.sqrt(sum(w * w for w in raw_weights.values()))
+-    if norm > 1e-12:
+-        inv = 1.0 / norm
+-        raw_weights = {t: w * inv for t, w in raw_weights.items()}
+-
+-    return raw_weights, term_slots
+-
+-
+-def inspect_passage_and_phrase(
+-    conn: sqlite3.Connection,
+-    path: str,
+-    raw_query_norm: str,
+-    q_tokens: list[str],
+-    existing_snippet: str,
+-) -> tuple[bool, str]:
+-    """Check for contiguous phrase match and extract the highest-density passage snippet."""
+-    row = conn.execute("SELECT title, body FROM files_fts WHERE path = ?", (path,)).fetchone()
+-    if not row:
+-        return False, existing_snippet
+-
+-    title, body = row[0] or "", row[1] or ""
+-    hay = f"{title}\n{body[:35000]}"
+-    norm_hay = re.sub(r"\s+", " ", hay).lower()
+-
+-    phrase_hit = len(raw_query_norm) >= 6 and raw_query_norm in norm_hay
+-
+-    if existing_snippet and not phrase_hit:
+-        return False, existing_snippet
+-
+-    tok_set = set(q_tokens)
+-    best_line = existing_snippet
+-    best_hits = 0
+-    best_pos = -1
+-
+-    if phrase_hit:
+-        idx = norm_hay.find(raw_query_norm)
+-        if idx >= 0:
+-            start = max(0, idx - 24)
+-            end = min(len(norm_hay), idx + len(raw_query_norm) + 56)
+-            orig_collapsed = re.sub(r"\s+", " ", hay)
+-            snippet = orig_collapsed[start:end].strip()
+-            if start > 0:
+-                snippet = "…" + snippet
+-            if end < len(orig_collapsed):
+-                snippet = snippet + "…"
+-            return True, snippet
+-
+-    for line in body[:25000].splitlines():
+-        clean = re.sub(r"\s+", " ", line).strip()
+-        if len(clean) < 4:
+-            continue
+-        line_toks = set(TOKEN_RE.findall(clean.lower()))
+-        hits = len(tok_set & line_toks)
+-        if hits > best_hits:
+-            best_hits = hits
+-            best_line = clean[:120]
+-            best_pos = 1
+-
+-    if best_pos < 0 and not best_line:
+-        for line in body[:4000].splitlines():
+-            clean = re.sub(r"\s+", " ", line).strip()
+-            if len(clean) >= 8:
+-                best_line = clean[:120]
+-                break
+-
+-    return phrase_hit, best_line
+-
+-
+-def cmd_search(query: str, limit: int = 20) -> None:
+-    q = query.strip()
+-    if len(q) < 2 or not DB_PATH.exists():
+-        print("[]")
+-        return
+-
+-    conn = connect_db()
+-    q_tokens = tokenize_content(q)
+-    if not q_tokens:
+-        conn.close()
+-        print("[]")
+-        return
+-
+-    total_slots = max(1, len(set(q_tokens)))
+-    q_weights, term_slots = expand_query_terms(conn, q_tokens)
+-
+-    cos_scores: dict[str, float] = {}
+-    matched_slots: dict[str, set[str]] = {}
+-
+-    if q_weights:
+-        placeholders = ",".join("?" for _ in q_weights)
+-        rows = conn.execute(
+-            f"SELECT term, path, weight FROM term_postings WHERE term IN ({placeholders})",
+-            list(q_weights.keys()),
+-        ).fetchall()
+-        for term, path, doc_w in rows:
+-            cos_scores[path] = cos_scores.get(path, 0.0) + q_weights[term] * float(doc_w)
+-            slots = term_slots.get(term)
+-            if slots:
+-                matched_slots.setdefault(path, set()).update(slots)
+-
+-    fts_hits: dict[str, tuple[float, str, bool]] = {}
+-    unique_fts_toks = list(dict.fromkeys(q_tokens))[:10]
+-    quoted = [f'"{t}"*' for t in unique_fts_toks]
+-
+-    fts_queries: list[tuple[str, bool]] = [(" AND ".join(quoted), True)]
+-    if len(quoted) > 1:
+-        fts_queries.append((" OR ".join(quoted), False))
+-
+-    for fts_q, is_and in fts_queries:
+-        if not is_and and len(fts_hits) >= 5:
+-            break
+-        try:
+-            rows = conn.execute(
+-                """
+-                SELECT path,
+-                       bm25(files_fts, 10.0, 1.0) AS rank,
+-                       snippet(files_fts, 2, '', '', '…', 18) AS snip
+-                FROM files_fts
+-                WHERE files_fts MATCH ?
+-                ORDER BY rank
+-                LIMIT ?
+-                """,
+-                (fts_q, limit * 3),
+-            ).fetchall()
+-            for path, rank, snip in rows:
+-                bm25_pos = max(0.0, -float(rank))
+-                clean_snip = re.sub(r"\s+", " ", snip or "").strip()
+-                prev = fts_hits.get(path)
+-                if prev is None or (is_and and not prev[2]) or bm25_pos > prev[0]:
+-                    fts_hits[path] = (bm25_pos, clean_snip, is_and)
+-                if is_and:
+-                    matched_slots.setdefault(path, set()).update(unique_fts_toks)
+-        except sqlite3.OperationalError:
+-            continue
+-
+-    candidate_paths = set(cos_scores.keys()) | set(fts_hits.keys())
+-    scored: list[dict] = []
+-
+-    for path in candidate_paths:
+-        cos_sim = cos_scores.get(path, 0.0)
+-        fts_data = fts_hits.get(path)
+-        n_matched = len(matched_slots.get(path, set()))
+-        if n_matched == 0 and fts_data is not None:
+-            n_matched = 1
+-
+-        coverage = min(1.0, n_matched / total_slots)
+-        cov_mult = coverage * coverage
+-
+-        if cos_sim < 0.04 and fts_data is None:
+-            continue
+-
+-        vec_points = max(0.0, cos_sim) * 1200.0
+-        fts_points = min(300.0, fts_data[0] * 30.0) if fts_data else 0.0
+-        and_bonus = 250.0 if (fts_data and fts_data[2] and total_slots > 1) else 0.0
+-
+-        total = (vec_points + fts_points + and_bonus) * cov_mult
+-        is_img = Path(path).suffix.lower() in IMAGE_EXTS
+-
+-        scored.append(
+-            {
+-                "path": path,
+-                "source": "image" if is_img else "doc",
+-                "score": round(total, 2),
+-                "vec": round(cos_sim, 3),
+-                "fts": round(fts_data[0], 2) if fts_data else 0.0,
+-                "coverage": round(coverage, 2),
+-                "phrase": False,
+-                "snippet": fts_data[1] if fts_data else "",
+-            }
+-        )
+-
+-    scored.sort(key=lambda x: x["score"], reverse=True)
+-
+-    raw_query_norm = re.sub(r"\s+", " ", q.lower()).strip()
+-    top_inspect = scored[:35]
+-    for item in top_inspect:
+-        phrase_hit, best_snip = inspect_passage_and_phrase(
+-            conn, item["path"], raw_query_norm, q_tokens, item["snippet"]
+-        )
+-        item["phrase"] = phrase_hit
+-        item["snippet"] = best_snip
+-        if phrase_hit:
+-            item["score"] = round(item["score"] + 750.0, 2)
+-
+-    top_inspect.sort(key=lambda x: x["score"], reverse=True)
+-    conn.close()
+-    print(json.dumps(top_inspect[:limit]))
+-
+-
+-def cmd_stats() -> None:
+-    if not DB_PATH.exists():
+-        print(json.dumps({"indexed_files": 0, "indexed_images": 0, "posting_rows": 0, "db_bytes": 0}))
+-        return
+-    conn = connect_db()
+-    count = conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
+-    img_count = conn.execute("SELECT COUNT(*) FROM image_cache").fetchone()[0]
+-    cap_count = conn.execute("SELECT COUNT(*) FROM image_cache WHERE LENGTH(TRIM(caption_text)) > 0").fetchone()[0]
+-    ocr_count = conn.execute("SELECT COUNT(*) FROM image_cache WHERE LENGTH(TRIM(ocr_text)) > 0").fetchone()[0]
+-    postings = conn.execute("SELECT COUNT(*) FROM term_postings").fetchone()[0]
+-    idf_terms = conn.execute("SELECT COUNT(*) FROM idf_stats").fetchone()[0]
+-    conn.close()
+-    print(
+-        json.dumps(
+-            {
+-                "indexed_files": count,
+-                "indexed_images": img_count,
+-                "captioned_images": cap_count,
+-                "ocr_images": ocr_count,
+-                "image_sync_running": is_image_sync_running(),
+-                "posting_rows": postings,
+-                "idf_terms": idf_terms,
+-                "db_bytes": DB_PATH.stat().st_size,
+-            }
+-        )
+-    )
+-
+-
+-def main() -> None:
+-    parser = argparse.ArgumentParser(description="Sparse TF-IDF Vector + FTS5 + Image OCR/VLM Indexer")
+-    sub = parser.add_subparsers(dest="cmd", required=True)
+-    sp_sync = sub.add_parser("sync", help="Fast incremental doc sync + spawn background image OCR/VLM worker")
+-    sp_sync.add_argument("--no-images", action="store_true", help="Skip spawning background image indexer")
+-
+-    sp_img = sub.add_parser("sync-images", help="Run offline RapidOCR + VLM caption indexing on eligible images")
+-    sp_img.add_argument("--retag", action="store_true", help="Generate VLM captions for images that only have OCR so far")
+-    sp_img.add_argument("--limit", type=int, default=0, help="Max images to process in this run (0 = all)")
+-
+-    sp = sub.add_parser("search", help="Hybrid sparse vector + FTS5 search")
+-    sp.add_argument("query", type=str)
+-    sp.add_argument("--limit", type=int, default=20)
+-    sub.add_parser("stats", help="Show index statistics")
+-
+-    args = parser.parse_args()
+-    if args.cmd == "sync":
+-        cmd_sync(spawn_images=not args.no_images)
+-    elif args.cmd == "sync-images":
+-        cmd_sync_images(retag=args.retag, limit=args.limit)
+-    elif args.cmd == "search":
+-        cmd_search(args.query, args.limit)
+-    elif args.cmd == "stats":
+-        cmd_stats()
+-
+-
+-if __name__ == "__main__":
+-    main()
+\ No newline at end of file
+diff --git a/scripts/image_caption.py b/scripts/image_caption.py
+deleted file mode 100644
+index ce69e38..0000000
+--- a/scripts/image_caption.py
++++ /dev/null
+@@ -1,155 +0,0 @@
+-#!/home/oarabile/.local/share/caption-venv/bin/python
+-"""
+-Offline batch image captioner for Quickshell Launcher.
+-Supports both ultra-lightweight ViT-GPT2 models (e.g. cnmoro/tiny-image-captioning, ~105 MB)
+-and compact multimodal VLMs (e.g. HuggingFaceTB/SmolVLM-256M-Instruct, ~512 MB).
+-
+-Reads a JSON array of image file paths from stdin (or CLI args) and prints a JSON
+-object mapping `{path: caption}` to stdout.
+-"""
+-import json
+-import os
+-import sys
+-from pathlib import Path
+-
+-CONFIG_PATH = Path.home() / ".config/quickshell/image_indexer.json"
+-DEFAULT_MODEL = "HuggingFaceTB/SmolVLM-256M-Instruct"
+-CAPTION_PROMPT = (
+-    "Describe this image concisely in one sentence, naming the main subjects, "
+-    "setting, colors, objects, and visual style."
+-)
+-
+-
+-def resolve_model_id() -> str:
+-    env_model = os.environ.get("QS_CAPTION_MODEL", "").strip()
+-    if env_model:
+-        return env_model
+-    if CONFIG_PATH.is_file():
+-        try:
+-            data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+-            cfg_model = str(data.get("model", "")).strip()
+-            if cfg_model:
+-                return cfg_model
+-        except Exception:
+-            pass
+-    return DEFAULT_MODEL
+-
+-
+-def load_rgb_image(path_str: str, max_side: int = 512):
+-    from PIL import Image
+-
+-    with Image.open(path_str) as im:
+-        rgb = im.convert("RGB")
+-        w, h = rgb.size
+-        longest = max(w, h)
+-        if longest > max_side:
+-            scale = max_side / float(longest)
+-            rgb = rgb.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.Resampling.BILINEAR)
+-        return rgb
+-
+-
+-def caption_with_smolvlm(model_id: str, paths: list[str]) -> dict[str, str]:
+-    import torch
+-    from transformers import AutoModelForImageTextToText, AutoProcessor
+-
+-    processor = AutoProcessor.from_pretrained(model_id)
+-    model = AutoModelForImageTextToText.from_pretrained(
+-        model_id,
+-        torch_dtype=torch.float32,
+-    )
+-    model.eval()
+-
+-    messages = [
+-        {
+-            "role": "user",
+-            "content": [
+-                {"type": "image"},
+-                {"type": "text", "text": CAPTION_PROMPT},
+-            ],
+-        }
+-    ]
+-    prompt_text = processor.apply_chat_template(messages, add_generation_prompt=True)
+-
+-    results: dict[str, str] = {}
+-    for p in paths:
+-        try:
+-            img = load_rgb_image(p, max_side=512)
+-            inputs = processor(text=prompt_text, images=[img], return_tensors="pt")
+-            with torch.inference_mode():
+-                generated = model.generate(
+-                    **inputs,
+-                    max_new_tokens=48,
+-                    do_sample=False,
+-                )
+-            prompt_len = inputs["input_ids"].shape[1]
+-            caption = processor.decode(generated[0][prompt_len:], skip_special_tokens=True).strip()
+-            if caption:
+-                results[p] = caption
+-        except Exception as exc:
+-            sys.stderr.write(f"image_caption: failed on {p}: {exc}\n")
+-    return results
+-
+-
+-def caption_with_vit_gpt2(model_id: str, paths: list[str]) -> dict[str, str]:
+-    import torch
+-    from transformers import AutoTokenizer, ViTImageProcessor, VisionEncoderDecoderModel
+-
+-    processor = ViTImageProcessor.from_pretrained(model_id)
+-    tokenizer = AutoTokenizer.from_pretrained(model_id)
+-    model = VisionEncoderDecoderModel.from_pretrained(model_id)
+-    model.eval()
+-
+-    results: dict[str, str] = {}
+-    for p in paths:
+-        try:
+-            img = load_rgb_image(p, max_side=384)
+-            pixel_values = processor(images=img, return_tensors="pt").pixel_values
+-            with torch.inference_mode():
+-                out_ids = model.generate(
+-                    pixel_values,
+-                    max_new_tokens=32,
+-                    num_beams=1,
+-                    do_sample=False,
+-                )
+-            caption = tokenizer.decode(out_ids[0], skip_special_tokens=True).strip()
+-            if caption:
+-                results[p] = caption
+-        except Exception as exc:
+-            sys.stderr.write(f"image_caption: failed on {p}: {exc}\n")
+-    return results
+-
+-
+-def main() -> None:
+-    if len(sys.argv) > 1:
+-        paths = [a for a in sys.argv[1:] if os.path.isfile(a)]
+-    else:
+-        raw = sys.stdin.read().strip()
+-        paths = json.loads(raw) if raw else []
+-        paths = [p for p in paths if isinstance(p, str) and os.path.isfile(p)]
+-
+-    if not paths:
+-        print("{}")
+-        return
+-
+-    try:
+-        import torch  # noqa: F401
+-        import transformers  # noqa: F401
+-        from PIL import Image  # noqa: F401
+-    except ImportError as exc:
+-        sys.stderr.write(f"image_caption: missing dependency ({exc}); skipping captions\n")
+-        print("{}")
+-        return
+-
+-    model_id = resolve_model_id()
+-    lower_id = model_id.lower()
+-
+-    if "vit-gpt2" in lower_id or "tiny-image-captioning" in lower_id:
+-        out = caption_with_vit_gpt2(model_id, paths)
+-    else:
+-        out = caption_with_smolvlm(model_id, paths)
+-
+-    print(json.dumps(out))
+-
+-
+-if __name__ == "__main__":
+-    main()
+\ No newline at end of file
+diff --git a/scripts/new-event.py b/scripts/new-event.py
+deleted file mode 100644
+index 5fa6190..0000000
+--- a/scripts/new-event.py
++++ /dev/null
+@@ -1,55 +0,0 @@
+-#!/usr/bin/env python3
+-"""Hand a new event to the default calendar application.
+-
+-usage: new-event.py YYYY-MM-DD HH:MM|allday TITLE...
+-
+-Writes a one-event .ics file and opens it with the system default handler for text/calendar
+-(GNOME Calendar, Evolution, Thunderbird, ...), which then lets you pick the calendar and save.
+-Set DURATION=<minutes> in the environment to change the default 60 minute length.
+-"""
+-import os
+-import subprocess
+-import sys
+-import tempfile
+-import uuid
+-from datetime import datetime, timedelta, timezone
+-
+-
+-def esc(s):
+-    return s.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+-
+-
+-def main():
+-    if len(sys.argv) < 3:
+-        sys.exit("usage: new-event.py YYYY-MM-DD HH:MM|allday TITLE...")
+-    date_s, time_s = sys.argv[1], sys.argv[2]
+-    title = " ".join(sys.argv[3:]).strip() or "New event"
+-    duration = int(os.environ.get("DURATION", "60"))
+-
+-    if time_s in ("", "allday"):
+-        d = datetime.strptime(date_s, "%Y-%m-%d")
+-        dtstart = "DTSTART;VALUE=DATE:%s" % d.strftime("%Y%m%d")
+-        dtend = "DTEND;VALUE=DATE:%s" % (d + timedelta(days=1)).strftime("%Y%m%d")
+-    else:
+-        s = datetime.strptime("%s %s" % (date_s, time_s), "%Y-%m-%d %H:%M")
+-        e = s + timedelta(minutes=duration)
+-        dtstart = "DTSTART:%s" % s.strftime("%Y%m%dT%H%M%S")   # floating local time
+-        dtend = "DTEND:%s" % e.strftime("%Y%m%dT%H%M%S")
+-
+-    uid = uuid.uuid4().hex
+-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+-    ics = "\r\n".join([
+-        "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//quickshell//bar//EN",
+-        "BEGIN:VEVENT", "UID:%s@quickshell" % uid, "DTSTAMP:%s" % stamp,
+-        dtstart, dtend, "SUMMARY:%s" % esc(title),
+-        "END:VEVENT", "END:VCALENDAR", "",
+-    ])
+-    path = os.path.join(tempfile.gettempdir(), "qs-event-%s.ics" % uid[:8])
+-    with open(path, "w", newline="") as fh:
+-        fh.write(ics)
+-    subprocess.Popen(["xdg-open", path], start_new_session=True,
+-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+-
+-
+-if __name__ == "__main__":
+-    main()
+diff --git a/scripts/ocr.py b/scripts/ocr.py
+deleted file mode 100755
+index 243c897..0000000
+--- a/scripts/ocr.py
++++ /dev/null
+@@ -1,116 +0,0 @@
+-#!/home/oarabile/.local/share/rapidocr-venv/bin/python
+-import os
+-import sys
+-import time
+-import subprocess
+-
+-RUNTIME_DIR = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
+-
+-def notify(title, body, urgency="normal"):
+-    subprocess.run(
+-        ["notify-send", "-u", urgency, "-a", "Quickshell OCR", "-i", "accessories-character-map", title, body],
+-        check=False
+-    )
+-
+-def format_markdown(result):
+-    if not result:
+-        return ""
+-    items = []
+-    for box, text, _score in result:
+-        y_top = min(pt[1] for pt in box)
+-        y_bot = max(pt[1] for pt in box)
+-        x_left = min(pt[0] for pt in box)
+-        height = max(1.0, y_bot - y_top)
+-        items.append((y_top, x_left, height, text.strip()))
+-
+-    items.sort(key=lambda it: (it[0], it[1]))
+-
+-    lines = []
+-    current_line = []
+-    current_y = None
+-    current_h = None
+-
+-    for y_top, x_left, height, text in items:
+-        if not text:
+-            continue
+-        if current_y is None:
+-            current_y = y_top
+-            current_h = height
+-            current_line = [(x_left, text)]
+-        elif abs(y_top - current_y) <= max(current_h, height) * 0.55:
+-            current_line.append((x_left, text))
+-        else:
+-            current_line.sort(key=lambda x: x[0])
+-            lines.append(" ".join(t for _, t in current_line))
+-            current_y = y_top
+-            current_h = height
+-            current_line = [(x_left, text)]
+-
+-    if current_line:
+-        current_line.sort(key=lambda x: x[0])
+-        lines.append(" ".join(t for _, t in current_line))
+-
+-    return "\n\n".join(lines)
+-
+-def main():
+-    if len(sys.argv) < 2 or not sys.argv[1]:
+-        notify("OCR Failed", "No image source provided.", "critical")
+-        sys.exit(1)
+-
+-    is_file = sys.argv[1] == "--file"
+-    if is_file:
+-        if len(sys.argv) < 3 or not sys.argv[2]:
+-            notify("OCR Failed", "No file path provided.", "critical")
+-            sys.exit(1)
+-        img_path = sys.argv[2]
+-        win_addr = sys.argv[3] if len(sys.argv) > 3 else ""
+-        cleanup = False
+-    else:
+-        clip_id = sys.argv[1]
+-        win_addr = sys.argv[2] if len(sys.argv) > 2 else ""
+-        img_path = os.path.join(RUNTIME_DIR, f"qs_ocr_{clip_id}_{int(time.time() * 1000)}.png")
+-        cleanup = True
+-
+-    try:
+-        if cleanup:
+-            with open(img_path, "wb") as f:
+-                subprocess.run(["cliphist", "decode", clip_id], stdout=f, check=True)
+-        elif not os.path.isfile(img_path):
+-            notify("OCR Failed", f"File not found: {img_path}", "critical")
+-            sys.exit(1)
+-
+-        from rapidocr_onnxruntime import RapidOCR
+-        result, _ = RapidOCR()(img_path)
+-
+-        markdown = format_markdown(result)
+-        if not markdown:
+-            notify("OCR Warning", "No text detected in image.")
+-            sys.exit(0)
+-
+-        subprocess.run(
+-            ["wl-copy", "--type", "text/plain;charset=utf-8"],
+-            input=markdown.encode("utf-8"),
+-            check=True
+-        )
+-
+-        if win_addr:
+-            subprocess.run(
+-                ["hyprctl", "dispatch", "focuswindow", f"address:{win_addr}"],
+-                stdout=subprocess.DEVNULL,
+-                stderr=subprocess.DEVNULL
+-            )
+-            time.sleep(0.15)
+-        subprocess.run(["wtype", "-M", "ctrl", "v", "-m", "ctrl"], check=False)
+-
+-        n = len(markdown.split("\n\n"))
+-        notify("OCR Complete", f"Pasted Markdown ({n} {'line' if n == 1 else 'lines'}).")
+-
+-    except Exception as e:
+-        notify("OCR Failed", str(e)[:140], "critical")
+-        sys.exit(1)
+-    finally:
+-        if cleanup and os.path.exists(img_path):
+-            os.remove(img_path)
+-
+-if __name__ == "__main__":
+-    main()
+\ No newline at end of file
+diff --git a/scripts/open-calendar.sh b/scripts/open-calendar.sh
+deleted file mode 100755
+index 9e05e28..0000000
+--- a/scripts/open-calendar.sh
++++ /dev/null
+@@ -1,20 +0,0 @@
+-#!/bin/sh
+-# usage: open-calendar.sh [YYYY-MM-DD]
+-# Opens the system default calendar (the handler registered for text/calendar).
+-handler=$(xdg-mime query default text/calendar 2>/dev/null)
+-
+-case "$handler" in
+-  *gnome-calendar*|"")
+-    if command -v gnome-calendar >/dev/null 2>&1; then
+-      if [ -n "$1" ]; then exec gnome-calendar --date "$1"; fi
+-      exec gnome-calendar
+-    fi
+-    ;;
+-esac
+-
+-if [ -n "$handler" ]; then
+-  exec gtk-launch "$handler"
+-fi
+-
+-echo "No default calendar application found (xdg-mime query default text/calendar is empty)" >&2
+-exit 1
+diff --git a/scripts/qs-osd b/scripts/qs-osd
+deleted file mode 100755
+index 009de69..0000000
+--- a/scripts/qs-osd
++++ /dev/null
+@@ -1,15 +0,0 @@
+-#!/usr/bin/env bash
+-set -euo pipefail
+-
+-if ! command -v quickshell >/dev/null 2>&1; then
+-    printf '%s\n' 'quickshell was not found in PATH' >&2
+-    exit 127
+-fi
+-
+-if (($# == 0)); then
+-    printf 'Usage: %s "message to show in the bar clock"\n' "$0" >&2
+-    exit 2
+-fi
+-
+-message="$*"
+-exec quickshell ipc call osd status "$message"
+diff --git a/settings.json b/settings.json
+index 9435e37..e10a672 100644
+--- a/settings.json
++++ b/settings.json
+@@ -1,14 +1,8 @@
+ {
+-  "colorScheme": "wallust",
+-  "wallustAutoReload": true,
+-  "accentColor": "#7aa2f7",
+   "fontFamily": "JetBrainsMono Nerd Font",
+   "fontScale": 1,
+   "cornerRadius": 0,
+-  "borderWidth": 1,
+-  "barPosition": "top",
+   "barHeight": 32,
+-  "barFloating": false,
+   "barMargin": 0,
+   "showWorkspaces": true,
+   "showMpris": true,
+@@ -19,54 +13,5 @@
+   "showBluetooth": true,
+   "showBattery": true,
+   "showClock": true,
+-  "gapsIn": 4,
+-  "gapsOut": 8,
+-  "hyprBorderSize": 1,
+-  "hyprRounding": 0,
+-  "hyprLayout": "dwindle",
+-  "hyprBlur": false,
+-  "hyprBlurPasses": 2,
+-  "hyprShadows": false,
+-  "hyprAnimations": true,
+-  "focusFollowsMouse": true,
+-  "mouseSensitivity": 0,
+-  "naturalScroll": false,
+-  "brightnessStep": 5,
+-  "nightLightEnabled": false,
+-  "nightLightTemp": 4200,
+-  "idleDimSeconds": 180,
+-  "idleLockSeconds": 300,
+-  "idleDpmsSeconds": 600,
+-  "volumeStep": 5,
+-  "allowOverAmplification": false,
+-  "muteMicOnStartup": false,
+-  "osdTimeoutMs": 1800,
+-  "preferredPlayer": "ncspot",
+-  "wifiScanIntervalSec": 15,
+-  "btAutoPower": true,
+-  "btShowBattery": true,
+-  "powerProfile": "balanced",
+-  "batteryWarnPercent": 20,
+-  "batteryCritPercent": 10,
+-  "caffeineOnFullscreen": true,
+-  "caffeineOnAc": false,
+-  "launcherWidth": 680,
+-  "launcherMaxResults": 9,
+-  "launcherShowRecent": true,
+-  "terminalCmd": "ghostty",
+-  "fileManagerCmd": "yazi",
+-  "aiPrefix": "?",
+-  "shellPrefix": ">",
+-  "calcPrefix": "=",
+-  "emojiPrefix": ":",
+-  "aiEnabled": true,
+-  "aiProvider": "ollama",
+-  "aiEndpoint": "http://localhost:11434",
+-  "aiApiKeyEnv": "OPENAI_API_KEY",
+-  "aiCustomCommand": "gemini -m {model} -p {prompt}",
+-  "aiModel": "gemma3:1b",
+-  "aiSystemPrompt": "You are a concise technical assistant on Arch Linux + Hyprland. Give direct answers without filler.",
+-  "aiTemperature": 0.3,
+-  "aiStream": true,
+-  "customModels": []
+-}
+\ No newline at end of file
++  "terminalCmd": "ghostty"
++}
+diff --git a/shell-swaync.qml b/shell-swaync.qml
+deleted file mode 100644
+index 30e46a4..0000000
+--- a/shell-swaync.qml
++++ /dev/null
+@@ -1,97 +0,0 @@
+-import QtQuick
+-import Quickshell
+-import Quickshell.Wayland
+-import Quickshell.Io
+-import Quickshell.Hyprland
+-
+-ShellRoot {
+-    id: root
+-
+-    property bool barVisible: true
+-
+-    IpcHandler {
+-        target: "bar"
+-        function toggle() {
+-            root.barVisible = !root.barVisible;
+-        }
+-    }
+-
+-    // Open/close any popup from a keybind, on the focused monitor:
+-    //   quickshell ipc call popup toggle settings
+-    // names: settings, wifi, bluetooth, volume, battery, calendar, mpris
+-    IpcHandler {
+-        target: "popup"
+-        function toggle(name: string): void {
+-            if (name === "settings") {
+-                settings.toggle("system");
+-                return;
+-            }
+-            const fm = Hyprland.focusedMonitor;
+-            const focused = fm ? fm.name : "";
+-            let target = null;
+-            for (let i = 0; i < bars.instances.length; i++) {
+-                const b = bars.instances[i];
+-                if (b.screen && b.screen.name === focused) target = b;
+-            }
+-            if (!target && bars.instances.length > 0) target = bars.instances[0];
+-            for (let i = 0; i < bars.instances.length; i++) {
+-                const b = bars.instances[i];
+-                if (b === target) b.activePopup = (b.activePopup === name ? "" : name);
+-                else b.activePopup = "";
+-            }
+-        }
+-        function close(): void {
+-            settings.dismiss();
+-            for (let i = 0; i < bars.instances.length; i++) bars.instances[i].activePopup = "";
+-        }
+-    }
+-
+-    // OSD is intentionally disabled. Use SwayNC for desktop notifications.
+-    // No Quickshell NotificationServer is instantiated, so SwayNC can own
+-    // org.freedesktop.Notifications without competing with this shell.
+-
+-    Settings {
+-        id: settings
+-        osd: null
+-        notificationCenter: null
+-    }
+-
+-    // Open/close the unified control center:
+-    //   quickshell ipc call settings toggle <system|network|bluetooth|theme|launcher|power>
+-    IpcHandler {
+-        target: "settings"
+-        function toggle(tab: string): void {
+-            settings.toggle(tab);
+-        }
+-        function close(): void {
+-            settings.dismiss();
+-        }
+-    }
+-
+-    Launcher {
+-        id: launcher
+-    }
+-
+-    // Open/close the launcher from a keybind:
+-    //   quickshell ipc call launcher toggle all
+-    // modes: all, files, clipboard, emoji, hidden
+-    IpcHandler {
+-        target: "launcher"
+-        function toggle(mode: string): void {
+-            launcher.toggle(mode);
+-        }
+-        function close(): void {
+-            launcher.dismiss();
+-        }
+-    }
+-
+-    Variants {
+-        id: bars
+-        model: Quickshell.screens
+-        Bar {
+-            visible: root.barVisible
+-            osd: null
+-            notificationCenter: null
+-        }
+-    }
+-}
+\ No newline at end of file
+diff --git a/shell.qml b/shell.qml
+index a211030..b236dcf 100644
+--- a/shell.qml
++++ b/shell.qml
+@@ -95,10 +95,7 @@ ShellRoot {
+ 
+     LazyLoader {
+         id: settingsLoader
+-        Settings {
+-            osd: null
+-            notificationCenter: null
+-        }
++        Settings {}
+ 
+         onActiveChanged: {
+             if (active && root.pendingSettingsTab.length > 0) {
+@@ -217,8 +214,6 @@ ShellRoot {
+         model: Quickshell.screens
+         Bar {
+             visible: root.barVisible
+-            osd: null
+-            notificationCenter: null
+         }
+     }
+ }
+diff --git a/shell.qml.backup b/shell.qml.backup
+deleted file mode 100644
+index 691b994..0000000
+--- a/shell.qml.backup
++++ /dev/null
+@@ -1,101 +0,0 @@
+-import QtQuick
+-import Quickshell
+-import Quickshell.Wayland
+-import Quickshell.Io
+-import Quickshell.Hyprland
+-
+-ShellRoot {
+-    id: root
+-
+-    property bool barVisible: true
+-
+-    IpcHandler {
+-        target: "bar"
+-        function toggle() {
+-            root.barVisible = !root.barVisible;
+-        }
+-    }
+-
+-    // Open/close any popup from a keybind, on the focused monitor:
+-    //   quickshell ipc call popup toggle settings
+-    // names: settings, wifi, bluetooth, volume, battery, calendar, mpris
+-    IpcHandler {
+-        target: "popup"
+-        function toggle(name: string): void {
+-            if (name === "settings") {
+-                settings.toggle("system");
+-                return;
+-            }
+-            const fm = Hyprland.focusedMonitor;
+-            const focused = fm ? fm.name : "";
+-            let target = null;
+-            for (let i = 0; i < bars.instances.length; i++) {
+-                const b = bars.instances[i];
+-                if (b.screen && b.screen.name === focused) target = b;
+-            }
+-            if (!target && bars.instances.length > 0) target = bars.instances[0];
+-            for (let i = 0; i < bars.instances.length; i++) {
+-                const b = bars.instances[i];
+-                if (b === target) b.activePopup = (b.activePopup === name ? "" : name);
+-                else b.activePopup = "";
+-            }
+-        }
+-        function close(): void {
+-            settings.dismiss();
+-            for (let i = 0; i < bars.instances.length; i++) bars.instances[i].activePopup = "";
+-        }
+-    }
+-
+-    Osd {
+-        id: osd
+-    }
+-
+-    NotificationCenter {
+-        id: notificationCenter
+-    }
+-
+-    Settings {
+-        id: settings
+-        osd: osd
+-        notificationCenter: notificationCenter
+-    }
+-
+-    // Open/close the unified control center:
+-    //   quickshell ipc call settings toggle <system|network|bluetooth|theme|launcher|power>
+-    IpcHandler {
+-        target: "settings"
+-        function toggle(tab: string): void {
+-            settings.toggle(tab);
+-        }
+-        function close(): void {
+-            settings.dismiss();
+-        }
+-    }
+-
+-    Launcher {
+-        id: launcher
+-    }
+-
+-    // Open/close the launcher from a keybind:
+-    //   quickshell ipc call launcher toggle all
+-    // modes: all, files, clipboard, emoji, hidden
+-    IpcHandler {
+-        target: "launcher"
+-        function toggle(mode: string): void {
+-            launcher.toggle(mode);
+-        }
+-        function close(): void {
+-            launcher.dismiss();
+-        }
+-    }
+-
+-    Variants {
+-        id: bars
+-        model: Quickshell.screens
+-        Bar {
+-            visible: root.barVisible
+-            osd: root.osd
+-            notificationCenter: root.notificationCenter
+-        }
+-    }
+-}
+\ No newline at end of file
+-- 
+2.43.0

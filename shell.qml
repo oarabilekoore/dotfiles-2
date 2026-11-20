@@ -94,19 +94,6 @@ ShellRoot {
     }
 
     LazyLoader {
-        id: settingsLoader
-        Settings {}
-
-        onActiveChanged: {
-            if (active && root.pendingSettingsTab.length > 0) {
-                const tab = root.pendingSettingsTab;
-                root.pendingSettingsTab = "";
-                item.toggle(tab);
-            }
-        }
-    }
-
-    LazyLoader {
         id: launcherLoader
         Launcher {}
 
