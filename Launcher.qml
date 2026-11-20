@@ -6,14 +6,13 @@ import Quickshell.Io
 import Quickshell.Hyprland
 import "."
 
-// Launcher: apps, hybrid lexical/semantic file & image search, rich previews, clipboard, and file OCR,
-// emoji, snippets, calculator, unit conversion, configurable !bangs, and dmenu IPC.
+// Launcher: apps, hybrid lexical/semantic file & image search, rich previews, clipboard, file OCR, emoji, calculator, unit conversion, configurable !bangs, and dmenu IPC.
 //
-//   quickshell ipc call launcher toggle <all|files|clipboard|emoji|snippets|hidden>
+//   quickshell ipc call launcher toggle <all|files|clipboard|emoji|hidden>
 //   quickshell ipc call launcher dmenu "" "" ""
 //
 // Sigils in All mode:
-//   "/" files   ";" clipboard   "'" emoji   "," snippets   ">" shell   "=" calc   "!" bangs
+//   "/" files   ";" clipboard   "'" emoji   ">" shell   "=" calc   "!" bangs
 PanelWindow {
     id: root
 
@@ -26,7 +25,6 @@ PanelWindow {
     readonly property string stateDir: homeDir + "/.local/state/quickshell-launcher"
     readonly property string fileCachePath: stateDir + "/file-index.txt"
     readonly property string bangConfigPath: homeDir + "/.config/quickshell/bangs.json"
-    readonly property string snippetConfigPath: homeDir + "/.config/quickshell/snippets.json"
     readonly property string hydrogenBin: "hydrogen"
     // Open-at-match commands. Placeholders: {file} {page} {line} {find}. Empty pdfViewerCmd = auto-detect
     // (zathura, okular, evince, mupdf, then xdg-open).
@@ -42,21 +40,18 @@ PanelWindow {
         homeDir + "/Projects"
     ]
 
-    readonly property var modeOrder: ["all", "files", "clipboard", "emoji", "snippets"]
+    readonly property var modeOrder: ["all", "files", "clipboard", "emoji"]
     readonly property var modeMeta: ({
-        all:       { label: "All",       glyph: "󰍉", hint: "Search apps, file contents, snippets (,hdr), or !sl / !sh / !yt…" },
+        all:       { label: "All",       glyph: "󰍉", hint: "Search applications, commands, files, or !sl / !sh / !yt…" },
         files:     { label: "Files",     glyph: "󰈔", hint: "Search filenames, document contents & image OCR/captions…" },
         clipboard: { label: "Clipboard", glyph: "󰅌", hint: "Search clipboard history (Del delete, Ctrl+D clear)…" },
         emoji:     { label: "Emoji",     glyph: "󰞅", hint: "Search emoji…" },
-        snippets:  { label: "Snippets",  glyph: "󰩫", hint: "Search snippets & dynamic templates ({date}, {clipboard}, {uuid})…" },
         hidden:    { label: "Hidden",    glyph: "󰈉", hint: "Hidden applications (Ctrl+B to unhide)…" },
         dmenu:     { label: "Select",    glyph: "󰘳", hint: "Filter options…" }
     })
     // typed as the very first character in "All" mode to jump to a mode
-    readonly property var sigils: ({ "/": "files", ";": "clipboard", "'": "emoji", ",": "snippets" })
+    readonly property var sigils: ({ "/": "files", ";": "clipboard", "'": "emoji" })
     property var bangConfig: []
-    property var snippetConfig: []
-    property string clipboardSnapshot: ""
 
     readonly property var sysCommands: [
         { id: "lock",      title: "Lock Screen",                       kw: "lock hyprlock screen",                        glyph: "󰌾", cmd: ["hyprlock"] },
@@ -68,7 +63,6 @@ PanelWindow {
         { id: "wall",      title: "Choose Wallpaper",                  kw: "wallpaper background picker",                 glyph: "󰸉", cmd: ["wallpicker"] },
         { id: "caf",       title: "Toggle Caffeine",                   kw: "caffeine awake idle inhibit",                 glyph: "󰅶", cmd: [root.homeDir + "/.config/hypr/scripts/caffeine.sh", "toggle"] },
         { id: "shot",      title: "Capture Region",                    kw: "screenshot snip capture",                     glyph: "󰄀", cmd: ["omasnap", "--capture-region"] },
-        { id: "qs",        title: "Quick Settings",                    kw: "settings quick panel",                        glyph: "󰒓", cmd: ["quickshell", "ipc", "call", "popup", "toggle", "settings"] },
         { id: "wifi",      title: "Network Manager",                   kw: "wifi wi-fi network nmtui",                    glyph: "󰖩", cmd: ["ghostty", "-o", "shell_integration=no-title", "-T", "nmtui", "nmtui"] },
         { id: "reidx",     title: "Refresh File & Vector Index",       kw: "reindex refresh files vector fts5 cache",       glyph: "󰑓", keepOpen: true, fn: () => root.rebuildFileCache(true) },
         { id: "reidx-img", title: "Index Images (Rust OCR + Vision)", kw: "reindex images ocr vision captions photos", glyph: "󰋩", keepOpen: true, fn: () => root.rebuildImageIndex() },
@@ -77,7 +71,6 @@ PanelWindow {
         { id: "m-hidden",  title: "Show Hidden Apps",                  kw: "hidden unhide apps invisible",                glyph: "󰈉", mode: "hidden" },
         { id: "m-files",   title: "Search Files",                      kw: "files find search vector content",            glyph: "󰈔", mode: "files" },
         { id: "m-clip",    title: "Clipboard History",                 kw: "clipboard history paste copy",             glyph: "󰅌", mode: "clipboard" },
-        { id: "m-snip",    title: "Text Snippets",                     kw: "snippets templates expand paste",             glyph: "󰩫", mode: "snippets" },
         { id: "m-emoji",   title: "Emoji Picker",                      kw: "emoji emoticon smiley",                       glyph: "󰞅", mode: "emoji" }
     ]
 
@@ -420,23 +413,6 @@ PanelWindow {
         });
     }
 
-    function loadSnippets() {
-        runCapture(["cat", snippetConfigPath], function (raw) {
-            if (!raw || !raw.trim().length) return;
-            try {
-                const parsed = JSON.parse(raw);
-                if (Array.isArray(parsed)) {
-                    root.snippetConfig = parsed.filter(s => s && (s.trigger || s.title) && typeof s.body === "string");
-                }
-            } catch (e) {
-                console.warn("launcher: invalid snippets.json:", e);
-            }
-        });
-        runCapture(["wl-paste", "-n"], function (clip) {
-            root.clipboardSnapshot = String(clip || "");
-        });
-    }
-
     function findBang(name) {
         const key = String(name || "").toLowerCase();
         for (let i = 0; i < bangConfig.length; i++) {
@@ -458,7 +434,6 @@ PanelWindow {
         loadStore();
         ensureFileCache();
         loadBangConfig();
-        loadSnippets();
     }
 
     // ------------------------------------------------------------------ open / close
@@ -471,7 +446,6 @@ PanelWindow {
         if (m === "clipboard") loadClipboard();
         else if (m === "files" || m === "all") ensureFileCache();
         else if (m === "emoji") loadEmoji();
-        else if (m === "snippets") loadSnippets();
     }
 
     function setMode(m) {
@@ -517,7 +491,6 @@ PanelWindow {
         actionsOpen = false;
         confirmKey = "";
         enterMode(mode);
-        if (mode !== "snippets") loadSnippets();
 
         if (wasOpen) {
             open = true;
@@ -716,27 +689,6 @@ PanelWindow {
 
     function tilde(p) {
         return p.indexOf(homeDir) === 0 ? "~" + p.slice(homeDir.length) : p;
-    }
-
-    function generateUuid() {
-        return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
-            const r = Math.random() * 16 | 0;
-            const v = c === "x" ? r : (r & 0x3 | 0x8);
-            return v.toString(16);
-        });
-    }
-
-    function expandSnippet(rawBody) {
-        const d = new Date();
-        const pad = (n) => (n < 10 ? "0" : "") + n;
-        const dateStr = d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
-        const timeStr = pad(d.getHours()) + ":" + pad(d.getMinutes());
-        return String(rawBody || "")
-            .replace(/\{date\}/g, dateStr)
-            .replace(/\{time\}/g, timeStr)
-            .replace(/\{datetime\}/g, dateStr + " " + timeStr)
-            .replace(/\{uuid\}/g, generateUuid())
-            .replace(/\{clipboard\}/g, clipboardSnapshot);
     }
 
     // ------------------------------------------------------------------ calculator
@@ -1442,57 +1394,6 @@ PanelWindow {
         return out.slice(0, limit);
     }
 
-    // ---- snippets & dynamic templates
-    function snippetItems(terms) {
-        const out = [];
-        for (let i = 0; i < snippetConfig.length; i++) {
-            const sn = snippetConfig[i];
-            const trig = String(sn.trigger || "").trim();
-            const title = String(sn.title || trig);
-            const rawBody = String(sn.body || "");
-            const expanded = expandSnippet(rawBody);
-            const singleLine = expanded.replace(/\s+/g, " ").trim();
-
-            let s = 100 - i;
-            let hits = [];
-            if (terms.length > 0) {
-                const mTitle = scoreText(title, terms, true);
-                const mTrig = trig ? scoreText(trig, terms, false) : null;
-                if (mTrig) {
-                    s = mTrig.s + 250;
-                } else if (mTitle) {
-                    s = mTitle.s;
-                    hits = mTitle.hits;
-                } else {
-                    const hay = (trig + " " + title + " " + rawBody).toLowerCase();
-                    let ok = true;
-                    for (let t = 0; t < terms.length; t++) if (hay.indexOf(terms[t]) < 0) { ok = false; break; }
-                    if (!ok) continue;
-                    s = 50;
-                }
-            }
-
-            out.push({
-                key: "snip:" + (trig || i),
-                section: "Snippets",
-                title: title,
-                subtitle: (trig ? ("," + trig + " · ") : "") + singleLine,
-                glyph: "󰩫",
-                badge: trig ? ("," + trig) : "Snippet",
-                hits: hits,
-                score: s,
-                preview: { type: "snippet", trigger: trig, raw: rawBody, expanded: expanded },
-                actions: [
-                    { label: "Paste into Previous App", run: () => root.pasteIntoPreviousApp(root.expandSnippet(rawBody)) },
-                    { label: "Copy Expanded Text", run: () => Quickshell.execDetached(["wl-copy", root.expandSnippet(rawBody)]) },
-                    { label: "Edit snippets.json", run: () => root.openUrl("file://" + root.snippetConfigPath) }
-                ]
-            });
-        }
-        if (terms.length > 0) out.sort((a, b) => b.score - a.score);
-        return out;
-    }
-
     // ---- universal dmenu
     function dmenuItems(terms) {
         const out = [];
@@ -1661,20 +1562,11 @@ PanelWindow {
         const topApps = apps.slice(0, 6);
         const cmds = commandItems(terms, 4);
         const files = q.length >= 2 ? fileItemsFromCache(terms, 6) : [];
-        const snips = q.length >= 2 ? snippetItems(terms).slice(0, 2) : [];
 
-        // If hybrid vector+FTS5 returned strong content hits, promote files near the top
-        const hasVectorHit = files.length > 0 && files[0].score >= 2500;
-        const primaryGroups = [];
-        if (topApps.length > 0) primaryGroups.push({ items: topApps, best: topApps[0].score + 200 });
-        if (cmds.length > 0) primaryGroups.push({ items: cmds, best: cmds[0].score + 180 });
-        if (hasVectorHit) primaryGroups.push({ items: files, best: 1400 });
-        primaryGroups.sort((a, b) => b.best - a.best);
-
+        // In All mode, application and command matches always precede files.
+        // Explicit file intent is handled by Files mode (the / prefix).
         let out = pinned.slice();
-        for (let i = 0; i < primaryGroups.length; i++) out = out.concat(primaryGroups[i].items);
-        if (!hasVectorHit && files.length > 0) out = out.concat(files);
-        if (snips.length > 0) out = out.concat(snips);
+        out = out.concat(topApps, cmds, files);
         if (!url) out = out.concat(webItems(q));
         return out;
     }
@@ -1688,14 +1580,13 @@ PanelWindow {
         if (mode === "clipboard") return clipboardItems(terms);
         if (mode === "files") return fileItemsFromCache(terms, 80);
         if (mode === "emoji") return emojiItems(terms);
-        if (mode === "snippets") return snippetItems(terms);
         return rootItems(q, terms);
     }
 
     readonly property var results: computeResults()
     readonly property var current: results.length > 0 ? results[Math.max(0, Math.min(selected, results.length - 1))] : null
     readonly property bool grid: mode === "emoji"
-    readonly property bool showPreview: ((mode === "clipboard" || mode === "files" || mode === "snippets") || (mode === "all" && current !== null && current.preview !== undefined)) && results.length > 0
+    readonly property bool showPreview: ((mode === "clipboard" || mode === "files") || (mode === "all" && current !== null && current.preview !== undefined)) && results.length > 0
 
     onResultsChanged: {
         if (selected >= results.length) selected = Math.max(0, results.length - 1);
@@ -1716,7 +1607,6 @@ PanelWindow {
         if (mode === "hidden") return "No hidden apps";
         if (mode === "clipboard") return "No clipboard history yet.\nEnable the cliphist watcher: wl-paste --type text --watch cliphist store";
         if (mode === "files") return fileIndexing ? "Indexing files, vectors & FTS5…" : "No matching files, images, or contents";
-        if (mode === "snippets") return "No snippets found.\nEdit ~/.config/quickshell/snippets.json to add templates.";
         if (mode === "emoji") return emojiData.length === 0 ? "Loading emoji…" : "No emoji found";
         return "No results";
     }
@@ -1863,26 +1753,6 @@ PanelWindow {
         const pv = it.preview;
         const my = ++previewSeq;
         const set = (d) => { if (my === root.previewSeq) root.previewData = d; };
-
-        if (pv.type === "snippet") {
-            const tokens = [];
-            if (pv.raw.indexOf("{date}") >= 0) tokens.push("{date}");
-            if (pv.raw.indexOf("{time}") >= 0) tokens.push("{time}");
-            if (pv.raw.indexOf("{datetime}") >= 0) tokens.push("{datetime}");
-            if (pv.raw.indexOf("{uuid}") >= 0) tokens.push("{uuid}");
-            if (pv.raw.indexOf("{clipboard}") >= 0) tokens.push("{clipboard}");
-            set({
-                kind: "text",
-                key: it.key,
-                text: pv.expanded,
-                meta: [
-                    ["Trigger", pv.trigger ? ("," + pv.trigger) : "—"],
-                    ["Characters", String(pv.expanded.length)],
-                    ["Tokens", tokens.length > 0 ? tokens.join(", ") : "Static"]
-                ]
-            });
-            return;
-        }
 
         if (pv.type === "clip") {
             if (pv.image) {
