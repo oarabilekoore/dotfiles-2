@@ -12,7 +12,7 @@ import "."
 //   quickshell ipc call launcher dmenu "" "" ""
 //
 // Sigils in All mode:
-//   "/" files   ";" clipboard   "'" emoji   "," snippets   ">" shell   "=" calc   "!" bangs
+//   "/" files   ";" clipboard   "'" emoji   ">" shell   "=" calc   "!" bangs
 PanelWindow {
     id: root
 
