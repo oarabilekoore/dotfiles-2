@@ -18,7 +18,7 @@ ShellRoot {
     function toggleSettings(tab) {
         if (!settingsLoader.active) {
             pendingSettingsTab = tab;
-            settingsLoader.active = true;
+            settingsLoader.activeAsync = true;
         } else if (settingsLoader.item) {
             settingsLoader.item.toggle(tab);
         } else {
@@ -39,7 +39,7 @@ ShellRoot {
     function callLauncher(action, args) {
         pendingLauncherAction = action;
         pendingLauncherArgs = args || [];
-        if (!launcherLoader.active) launcherLoader.active = true;
+        if (!launcherLoader.active) launcherLoader.activeAsync = true;
         if (launcherLoader.item) dispatchLauncherAction();
     }
 
