@@ -12,7 +12,7 @@ This shell uses Quickshell's `LazyLoader` for expensive windows and popup trees.
 ## Behaviour and trade-offs
 
 - First opening the launcher or settings window now has a small construction cost. Subsequent opens during the grace period reuse the existing object.
-- Launcher state is still read from disk on creation, and its existing indexing/search behaviour is unchanged.
+- Launcher state is still read from disk on creation. Its initial file-index refresh now happens when the launcher is first opened (or when the reindex IPC action is called), rather than at shell startup; this avoids launching Hydrogen just to prepare a launcher that may never be used.
 - Settings refreshes system state when opened. Its former startup refresh was removed because the first `present()` already refreshes those same sources.
 - Bar modules remain resident because they provide always-visible status indicators. Their service bindings are event-driven; the shell does not spawn a polling process for every module.
 - No visual effects, blur, shadows, or functionality were removed.
