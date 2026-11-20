@@ -7,30 +7,8 @@ import Quickshell.Hyprland
 ShellRoot {
     id: root
     property bool barVisible: true
-    property string pendingSettingsTab: ""
     property string pendingLauncherAction: ""
     property var pendingLauncherArgs: []
-
-    function toggleSettings(tab) {
-        if (!settingsLoader.active) {
-            pendingSettingsTab = tab;
-            settingsLoader.activeAsync = true;
-        } else if (settingsLoader.item) {
-            settingsLoader.item.toggle(tab);
-        } else {
-            pendingSettingsTab = tab;
-        }
-    }
-
-    function closeSettings() {
-        pendingSettingsTab = "";
-        if (settingsLoader.active) {
-            settingsLoader.item.dismiss();
-            settingsUnloadTimer.restart();
-        } else {
-            settingsLoader.active = false;
-        }
-    }
 
     function callLauncher(action, args) {
         pendingLauncherAction = action;
@@ -77,28 +55,6 @@ ShellRoot {
         }
     }
 
-    Timer {
-        id: settingsUnloadTimer
-        interval: 1400
-        repeat: false
-        onTriggered: {
-            if (settingsLoader.item && !settingsLoader.item.open)
-                settingsLoader.active = false;
-        }
-    }
-
-    LazyLoader {
-        id: settingsLoader
-        Settings {}
-        onActiveChanged: {
-            if (active && root.pendingSettingsTab.length > 0) {
-                const tab = root.pendingSettingsTab;
-                root.pendingSettingsTab = "";
-                item.toggle(tab);
-            }
-        }
-    }
-
     LazyLoader {
         id: launcherLoader
         Launcher {}
@@ -117,16 +73,6 @@ ShellRoot {
         }
     }
 
-    Connections {
-        target: settingsLoader.active ? settingsLoader.item : null
-        ignoreUnknownSignals: true
-        function onOpenChanged() {
-            if (!settingsLoader.item) return;
-            if (settingsLoader.item.open) settingsUnloadTimer.stop();
-            else settingsUnloadTimer.restart();
-        }
-    }
-
     IpcHandler {
         target: "bar"
         function toggle() { root.barVisible = !root.barVisible; }
@@ -135,10 +81,6 @@ ShellRoot {
     IpcHandler {
         target: "popup"
         function toggle(name: string): void {
-            if (name === "settings") {
-                root.toggleSettings("system");
-                return;
-            }
             const fm = Hyprland.focusedMonitor;
             const focused = fm ? fm.name : "";
             let target = null;
@@ -154,15 +96,8 @@ ShellRoot {
             }
         }
         function close(): void {
-            root.closeSettings();
             for (let i = 0; i < bars.instances.length; i++) bars.instances[i].activePopup = "";
         }
-    }
-
-    IpcHandler {
-        target: "settings"
-        function toggle(tab: string): void { root.toggleSettings(tab); }
-        function close(): void { root.closeSettings(); }
     }
 
     IpcHandler {
