@@ -1,3 +1,4 @@
+singleton Config 1.0 Config.qml
 singleton Theme 1.0 Theme.qml
 singleton Notify 1.0 Notify.qml
 singleton Battery 1.0 Battery.qml
@@ -5,3 +6,4 @@ singleton Brightness 1.0 Brightness.qml
 singleton BluetoothPower 1.0 BluetoothPower.qml
 Bar 1.0 Bar.qml
 Launcher 1.0 Launcher.qml
+Settings 1.0 Settings.qml
