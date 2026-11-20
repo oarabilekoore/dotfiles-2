@@ -28,7 +28,7 @@ ShellRoot {
 
     function closeSettings() {
         pendingSettingsTab = "";
-        if (settingsLoader.item) {
+        if (settingsLoader.active) {
             settingsLoader.item.dismiss();
             settingsUnloadTimer.restart();
         } else {
@@ -39,8 +39,8 @@ ShellRoot {
     function callLauncher(action, args) {
         pendingLauncherAction = action;
         pendingLauncherArgs = args || [];
-        if (!launcherLoader.active) launcherLoader.activeAsync = true;
-        if (launcherLoader.item) dispatchLauncherAction();
+        if (launcherLoader.active) dispatchLauncherAction();
+        else launcherLoader.activeAsync = true;
     }
 
     function dispatchLauncherAction() {
@@ -65,7 +65,7 @@ ShellRoot {
     function closeLauncher() {
         pendingLauncherAction = "";
         pendingLauncherArgs = [];
-        if (launcherLoader.item) {
+        if (launcherLoader.active) {
             launcherLoader.item.dismiss();
             launcherUnloadTimer.restart();
         } else {
@@ -119,7 +119,7 @@ ShellRoot {
     }
 
     Connections {
-        target: launcherLoader.item
+        target: launcherLoader.active ? launcherLoader.item : null
         ignoreUnknownSignals: true
 
         function onOpenChanged() {
@@ -130,7 +130,7 @@ ShellRoot {
     }
 
     Connections {
-        target: settingsLoader.item
+        target: settingsLoader.active ? settingsLoader.item : null
         ignoreUnknownSignals: true
 
         function onOpenChanged() {
