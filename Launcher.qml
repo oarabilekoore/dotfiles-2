@@ -390,7 +390,7 @@ PanelWindow {
             return;
         }
         const seq = ++contentSearchSeq;
-        const args = [hydrogenBin, "query", q];
+        const args = [hydrogenBin, "search", q];
         runCapture(args, function (raw) {
             if (seq !== root.contentSearchSeq) return;
             root.contentQuery = q;
@@ -1375,6 +1375,34 @@ PanelWindow {
         if (terms.length > 0 && contentQuery === qTrim && contentResults.length > 0) {
             for (let i = 0; i < contentResults.length; i++) {
                 const cr = contentResults[i];
+                const kind = String(cr.kind || "file");
+                if (kind === "conversation" || kind === "web_page") {
+                    const id = String(cr.id || "");
+                    if (!id) continue;
+                    const key = kind + ":" + id;
+                    if (seen[key]) continue;
+                    seen[key] = true;
+                    const isConversation = kind === "conversation";
+                    const title = String(cr.title || (isConversation ? "Saved conversation" : "Saved article"));
+                    const snippet = String(cr.snippet || "").trim();
+                    const targetFlag = isConversation ? "--conversation" : "--page";
+                    out.push({
+                        key: key,
+                        section: isConversation ? "Hydrogen · Saved conversations" : "Hydrogen · Saved articles",
+                        title: title,
+                        subtitle: snippet || (isConversation ? "Saved AI conversation" : String(cr.url || "Saved web article")),
+                        glyph: isConversation ? "󰭻" : "󰖟",
+                        badge: isConversation ? "Chat" : "Article",
+                        hits: [],
+                        score: 3500,
+                        preview: { type: "answer", answer: snippet || title, sources: [] },
+                        actions: [{
+                            label: isConversation ? "Open Conversation" : "Open Saved Article",
+                            run: () => Quickshell.execDetached([root.hydrogenBin, "--frontend", targetFlag, id])
+                        }]
+                    });
+                    continue;
+                }
                 const p = String(cr.path || "");
                 if (!p || seen[p]) continue;
                 seen[p] = true;
