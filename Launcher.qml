@@ -1396,7 +1396,7 @@ PanelWindow {
                 glyph: "󰚩",
                 badge: status === "ready" ? root.answerModel : (status === "loading" ? "Working" : "Ask"),
                 hits: [],
-                score: 2200,
+                score: 1000000,
                 preview: { type: "answer", answer: statusText, sources: sameQuery ? aiAnswerSources : [] },
                 actions: status === "loading" ? [] : (status === "ready" && readyPath.length > 0
                     ? [{ label: "Open Answer in Browser", run: () => Quickshell.execDetached(["xdg-open", readyPath]) }]
