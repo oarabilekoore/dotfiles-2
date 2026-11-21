@@ -1395,7 +1395,7 @@ PanelWindow {
                         badge: isConversation ? "Chat" : "Article",
                         hits: [],
                         score: 3500,
-                        preview: { type: "text", text: snippet, meta: [[ "Type", isConversation ? "Saved conversation" : "Saved article" ], [ "Updated", String(cr.updated_at || "") ]] },
+                        preview: { type: "answer", answer: snippet || title, sources: [] },
                         actions: [{
                             label: isConversation ? "Open Conversation" : "Open Saved Article",
                             run: () => Quickshell.execDetached([root.hydrogenBin, "--frontend", targetFlag, id])
