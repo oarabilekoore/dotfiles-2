@@ -1376,34 +1376,29 @@ PanelWindow {
             for (let i = 0; i < contentResults.length; i++) {
                 const cr = contentResults[i];
                 const kind = String(cr.kind || "file");
-                if (kind !== "file") {
+                if (kind === "conversation" || kind === "web_page") {
                     const id = String(cr.id || "");
                     if (!id) continue;
-                    const isAnswer = kind === "answer";
-                    const isConversation = kind === "conversation";
-                    const isWebPage = kind === "web_page";
-                    if (!isAnswer && !isConversation && !isWebPage) continue;
                     const key = kind + ":" + id;
                     if (seen[key]) continue;
                     seen[key] = true;
-                    const title = String(cr.title || (isWebPage ? "Saved article" : "Saved conversation"));
-                    const subtitle = String(cr.snippet || "").trim();
-                    const targetArgs = isWebPage
-                        ? [root.hydrogenBin, "--frontend", "--page", id]
-                        : [root.hydrogenBin, "--frontend", "--conversation", id];
+                    const isConversation = kind === "conversation";
+                    const title = String(cr.title || (isConversation ? "Saved conversation" : "Saved article"));
+                    const snippet = String(cr.snippet || "").trim();
+                    const targetFlag = isConversation ? "--conversation" : "--page";
                     out.push({
                         key: key,
-                        section: isAnswer ? "AI · Saved Answers" : (isWebPage ? "Web · Saved Articles" : "AI · Conversations"),
+                        section: isConversation ? "Hydrogen · Saved conversations" : "Hydrogen · Saved articles",
                         title: title,
-                        subtitle: subtitle,
-                        glyph: isAnswer ? "󰚩" : (isWebPage ? "󰗚" : "󰭻"),
-                        badge: isAnswer ? "Answer" : (isWebPage ? "Article" : "Chat"),
+                        subtitle: snippet || (isConversation ? "Saved AI conversation" : String(cr.url || "Saved web article")),
+                        glyph: isConversation ? "󰭻" : "󰖟",
+                        badge: isConversation ? "Chat" : "Article",
                         hits: [],
-                        score: isAnswer ? 6500 : (isWebPage ? 5600 : 5200),
-                        preview: { type: "answer", answer: subtitle, sources: [] },
+                        score: 3500,
+                        preview: { type: "answer", answer: snippet || title, sources: [] },
                         actions: [{
-                            label: isWebPage ? "Open Saved Article" : (isAnswer ? "Open Saved Answer" : "Open Conversation"),
-                            run: () => Quickshell.execDetached(targetArgs)
+                            label: isConversation ? "Open Conversation" : "Open Saved Article",
+                            run: () => Quickshell.execDetached([root.hydrogenBin, "--frontend", targetFlag, id])
                         }]
                     });
                     continue;
