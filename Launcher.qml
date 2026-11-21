@@ -1440,10 +1440,12 @@ PanelWindow {
                         hits: [],
                         score: 3800 + (Number(hit.updated_at) || 0) / 1000000000,
                         preview: { type: "knowledge", excerpt: excerpt, kind: kind, url: url },
-                        actions: [
-                            { label: "Open Saved Offline Article", run: () => Quickshell.execDetached([root.hydrogenBin, "--frontend", "--page", String(id)]) },
-                            ...(url ? [{ label: "Open Original Article", run: () => root.openUrl(url) }] : [])
-                        ]
+                        actions: url
+                            ? [
+                                { label: "Open Saved Offline Article", run: () => Quickshell.execDetached([root.hydrogenBin, "--frontend", "--page", String(id)]) },
+                                { label: "Open Original Article", run: () => root.openUrl(url) }
+                              ]
+                            : [{ label: "Open Saved Offline Article", run: () => Quickshell.execDetached([root.hydrogenBin, "--frontend", "--page", String(id)]) }]
                     });
                 }
             }
