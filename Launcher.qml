@@ -117,6 +117,7 @@ PanelWindow {
     property string aiAnswerQuery: ""
     property string aiAnswerStatus: "idle"
     property var aiAnswerSources: []
+    property string aiAnswerHtmlPath: ""
     property int aiAnswerSeq: 0
 
     // Universal dmenu state
@@ -415,9 +416,10 @@ PanelWindow {
         const seq = ++root.aiAnswerSeq;
         root.aiAnswer = "";
         root.aiAnswerSources = [];
+        root.aiAnswerHtmlPath = "";
         root.aiAnswerQuery = q;
         root.aiAnswerStatus = "loading";
-        const answerArgs = [root.hydrogenBin, "answer", q];
+        const answerArgs = [root.hydrogenBin, "answer", q, "--html"];
         runCapture(answerArgs, function (raw) {
             if (seq !== root.aiAnswerSeq || root.query.trim() !== q) return;
             try {
@@ -425,6 +427,11 @@ PanelWindow {
                 root.aiAnswerStatus = String(result.status || "unavailable");
                 root.aiAnswer = String(result.answer || "");
                 root.aiAnswerSources = Array.isArray(result.sources) ? result.sources : [];
+                root.aiAnswerHtmlPath = String(result.html_path || "");
+                if (root.aiAnswerStatus === "ready" && root.aiAnswerHtmlPath.length > 0)
+                    Quickshell.execDetached(["xdg-open", root.aiAnswerHtmlPath]);
+                else if (root.aiAnswerStatus === "ready")
+                    root.aiAnswerStatus = "unavailable";
             } catch (e) {
                 root.aiAnswerStatus = "unavailable";
                 root.aiAnswer = "";
@@ -435,7 +442,6 @@ PanelWindow {
     }
 
     Timer { id: contentSearchTimer; interval: 100; repeat: false; onTriggered: root.requestContentSearch() }
-    Timer { id: answerTimer; interval: 850; repeat: false; onTriggered: root.requestAiAnswer() }
     Timer {
         id: indexRevisionTimer
         interval: 1200
@@ -1362,54 +1368,34 @@ PanelWindow {
         const seen = {};
         const qTrim = query.trim();
 
-        // 0. Keep the answer slot visible while generating or when local inference is unavailable.
-        if (terms.length > 0 && aiAnswerQuery === qTrim && aiAnswerStatus !== "idle" && aiAnswerStatus !== "ready") {
-            const statusText = aiAnswerStatus === "loading"
-                ? "Retrieving indexed passages and asking " + root.answerModel + "…"
-                : (aiAnswerStatus === "no_context"
-                    ? "No matching indexed passages contain enough text to answer this question."
-                    : "Ollama is unavailable. Start Ollama and check that the configured Ollama model is installed.");
+        // AI is an explicit action. Search never starts model inference by itself.
+        if (terms.length > 0 && qTrim.length >= 3) {
+            const sameQuery = aiAnswerQuery === qTrim;
+            const status = sameQuery ? aiAnswerStatus : "idle";
+            const readyPath = sameQuery ? aiAnswerHtmlPath : "";
+            const statusText = status === "loading"
+                ? "Retrieving indexed passages and generating with " + root.answerModel + "…"
+                : (status === "ready"
+                    ? "Your source-grounded answer is ready. Open it in your browser."
+                    : (status === "no_context"
+                        ? "No indexed passages were available to answer this question. Try again after indexing."
+                        : (status === "unavailable"
+                            ? "Answer generation failed. Select to retry and inspect the reported Ollama error."
+                            : "Generate a source-grounded answer from your indexed documents. Nothing runs until you select this item.")));
             out.push({
-                key: "rag-status:" + qTrim,
-                section: "AI Answer · Local RAG",
-                title: aiAnswerStatus === "loading" ? "Generating Answer…" : "AI Answer Unavailable",
+                key: "rag-ask:" + qTrim,
+                section: "AI · On demand",
+                title: status === "loading" ? "Generating AI Answer…" : (status === "ready" ? "AI Answer Ready" : "Ask AI about this search"),
                 subtitle: statusText,
                 glyph: "󰚩",
-                badge: aiAnswerStatus === "loading" ? "Working" : "Local",
+                badge: status === "ready" ? root.answerModel : (status === "loading" ? "Working" : "Ask"),
                 hits: [],
-                score: 1000000,
-                preview: { type: "answer", answer: statusText, sources: [] },
-                actions: [{ label: "Retry", keepOpen: true, run: () => answerTimer.restart() }]
-            });
-        }
-
-        // 1. Local RAG answer, grounded in the same indexed document passages.
-        if (terms.length > 0 && aiAnswerStatus === "ready" && aiAnswerQuery === qTrim && aiAnswer.length > 0) {
-            const answerActions = [
-                { label: "Copy Answer", run: () => Quickshell.execDetached(["wl-copy", root.aiAnswer]) }
-            ];
-            for (let i = 0; i < aiAnswerSources.length; i++) {
-                const source = aiAnswerSources[i];
-                const sourcePath = String(source.path || "");
-                if (!sourcePath) continue;
-                const sourcePage = Number(source.page) > 0 ? Number(source.page) : 0;
-                const sourceLine = Number(source.line) > 0 ? Number(source.line) : 0;
-                answerActions.push({
-                    label: "Open Source " + (i + 1) + (sourcePage ? " · Page " + sourcePage : (sourceLine ? " · Line " + sourceLine : "")),
-                    run: () => root.openAtMatch(sourcePath, { page: sourcePage, line: sourceLine, needle: qTrim })
-                });
-            }
-            out.push({
-                key: "rag-answer:" + qTrim,
-                section: "AI Answer · Local RAG",
-                title: "AI Answer",
-                subtitle: aiAnswer.replace(/\s+/g, " ").slice(0, 180),
-                glyph: "󰚩",
-                badge: root.answerModel,
-                hits: [],
-                score: 1000000,
-                preview: { type: "answer", answer: aiAnswer, sources: aiAnswerSources },
-                actions: answerActions
+                score: 2200,
+                preview: { type: "answer", answer: statusText, sources: sameQuery ? aiAnswerSources : [] },
+                actions: status === "loading" ? [] : (status === "ready" && readyPath.length > 0
+                    ? [{ label: "Open Answer in Browser", run: () => Quickshell.execDetached(["xdg-open", readyPath]) }]
+                    : [{ label: status === "unavailable" || status === "no_context" ? "Retry Answer" : "Generate Answer",
+                         keepOpen: true, run: () => root.requestAiAnswer() }])
             });
         }
 
@@ -2045,7 +2031,6 @@ PanelWindow {
                             root.actionsOpen = false;
                             if (root.mode === "files" || root.mode === "all") {
                                 contentSearchTimer.restart();
-                                answerTimer.restart();
                             }
                         }
                         Keys.onPressed: (ev) => root.handleKey(ev)
