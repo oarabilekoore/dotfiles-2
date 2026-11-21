@@ -404,47 +404,13 @@ PanelWindow {
     }
 
     // Generate one grounded answer after the normal file search has settled.
+    // AI is strictly on demand. The launcher never runs inference itself;
+    // it opens the persistent Hydrogen frontend and deep-links the question.
     function requestAiAnswer() {
         const q = root.query.trim();
         if ((root.mode !== "files" && root.mode !== "all") || q.length < 3 ||
-            q.charAt(0) === "!" || q.charAt(0) === ">" || q.charAt(0) === "=") {
-            root.aiAnswer = "";
-            root.aiAnswerQuery = "";
-            root.aiAnswerSources = [];
-            root.aiAnswerHtmlPath = "";
-            root.aiAnswerError = "";
-            root.aiAnswerStatus = "idle";
-            return;
-        }
-        const seq = ++root.aiAnswerSeq;
-        root.aiAnswer = "";
-        root.aiAnswerSources = [];
-        root.aiAnswerHtmlPath = "";
-        root.aiAnswerError = "";
-        root.aiAnswerQuery = q;
-        root.aiAnswerStatus = "loading";
-        const answerArgs = [root.hydrogenBin, "answer", q, "--html"];
-        runCapture(answerArgs, function (raw) {
-            if (seq !== root.aiAnswerSeq || root.query.trim() !== q) return;
-            try {
-                const result = JSON.parse(raw);
-                root.aiAnswerStatus = String(result.status || "unavailable");
-                root.aiAnswer = String(result.answer || "");
-                root.aiAnswerSources = Array.isArray(result.sources) ? result.sources : [];
-                root.aiAnswerHtmlPath = String(result.html_path || "");
-                root.aiAnswerError = String(result.error || "");
-                if (root.aiAnswerStatus === "ready" && root.aiAnswerHtmlPath.length > 0)
-                    Quickshell.execDetached(["xdg-open", root.aiAnswerHtmlPath]);
-                else if (root.aiAnswerStatus === "ready")
-                    root.aiAnswerStatus = "unavailable";
-            } catch (e) {
-                root.aiAnswerStatus = "unavailable";
-                root.aiAnswer = "";
-                root.aiAnswerSources = [];
-                root.aiAnswerError = String(e);
-                console.warn("launcher: local RAG answer returned invalid JSON:", e);
-            }
-        });
+            q.charAt(0) === "!" || q.charAt(0) === ">" || q.charAt(0) === "=") return;
+        Quickshell.execDetached([root.hydrogenBin, "--frontend", "--ask", q]);
     }
 
     Timer { id: contentSearchTimer; interval: 100; repeat: false; onTriggered: root.requestContentSearch() }
@@ -1387,7 +1353,7 @@ PanelWindow {
                         ? "No indexed passages were available to answer this question. Try again after indexing."
                         : (status === "unavailable"
                             ? (aiAnswerError.length > 0 ? aiAnswerError : "Answer generation failed. Select to retry.")
-                            : "Generate a source-grounded answer from your indexed documents. Nothing runs until you select this item.")));
+                            : "Open Hydrogen AI and generate a source-grounded answer. Nothing runs until you select this item.")));
             out.push({
                 key: "rag-ask:" + qTrim,
                 section: "AI · On demand",
