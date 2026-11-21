@@ -94,8 +94,10 @@ The launcher reads:
 
 Bundled bang defaults are copied into the user configuration directory on first launch. Keep personal snippets and machine-specific settings out of version control.
 
-### Local RAG answers
+### Unified Hydrogen knowledge and local RAG
 
-When a query is entered in Files mode or All mode, the launcher waits briefly for typing to settle and asks Hydrogen for a local answer. Hydrogen retrieves the configured number of indexed passages and sends only those excerpts to the locally configured Ollama model. The answer appears as the first item in the Files results, includes inline source citations, and exposes actions to copy the answer or open each cited source at its indexed page/line.
+In Files mode and All mode, the launcher calls `hydrogen search QUERY`. Hydrogen combines indexed files and PDF passages with saved answers, conversations and captured web articles. Selecting a saved answer or conversation opens its persistent conversation in the Hydrogen frontend; selecting a saved article opens its offline reading view. File results retain their existing page/line-aware open and preview behaviour.
 
-Requirements: Ollama must be running locally and the model configured under `[answer].model` must be installed. The feature does not make cloud requests. Retrieval limits, endpoint, context size and generation parameters all come from Hydrogen configuration. See [Hydrogen configuration](https://github.com/oarabilekoore/hydrogen/blob/main/docs/CONFIGURATION.md). See [Hydrogen RAG documentation](https://github.com/oarabilekoore/hydrogen/blob/main/docs/RAG.md).
+AI generation is strictly on demand. The launcher adds an **Ask AI about this search** action, but does not run inference while you type. Selecting it opens the persistent Hydrogen frontend, creates a conversation and starts source-grounded generation there. The answer and citations are saved and become searchable in subsequent launcher searches.
+
+Requirements: the configured local Ollama service and `[answer].model` must be available for generation. Search and previously saved knowledge remain usable without loading an AI model. Retrieval limits, endpoint, context size and generation parameters come from Hydrogen configuration. See [Hydrogen configuration](https://github.com/oarabilekoore/hydrogen/blob/main/docs/CONFIGURATION.md) and [Hydrogen RAG documentation](https://github.com/oarabilekoore/hydrogen/blob/main/docs/RAG.md).
