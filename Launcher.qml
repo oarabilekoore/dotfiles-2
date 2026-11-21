@@ -290,9 +290,7 @@ PanelWindow {
         if (!force && cachedFiles.length > 0 && (now - fileCacheTime) < 600000) return;
 
         fileIndexing = true;
-        const syncCommand = semanticSearchEnabled
-            ? ["sh", "-c", "HYDROGEN_EMBEDDINGS=1 \"$1\" index sync", "_", hydrogenBin]
-            : [hydrogenBin, "index", "sync"];
+        const syncCommand = [hydrogenBin, "index", "sync"];
         runCapture(syncCommand, function (syncOut) {
             try {
                 const info = JSON.parse(syncOut);
@@ -312,9 +310,7 @@ PanelWindow {
     function rebuildImageIndex() {
         if (imageIndexing) return;
         imageIndexing = true;
-        const command = semanticSearchEnabled
-            ? ["sh", "-c", "HYDROGEN_EMBEDDINGS=1 \"$1\" index sync-images", "_", hydrogenBin]
-            : [hydrogenBin, "index", "sync-images"];
+        const command = [hydrogenBin, "index", "sync-images"];
         runCapture(command, function (_out) {
             root.imageIndexing = false;
             if ((root.mode === "files" || root.mode === "all") && root.query.trim().length >= 2) {
@@ -327,7 +323,7 @@ PanelWindow {
         if (semanticSetupRunning) return;
         semanticSetupRunning = true;
         fileIndexing = true;
-        const script = "HYDROGEN_EMBEDDINGS=1 \"$1\" index sync && HYDROGEN_EMBEDDINGS=1 \"$1\" index embed";
+        const script = "\"$1\" config set indexing.embeddings_enabled true && \"$1\" index sync && \"$1\" index embed";
         runCapture(["sh", "-c", script, "_", hydrogenBin], function (raw) {
             root.semanticSetupRunning = false;
             root.fileIndexing = false;
