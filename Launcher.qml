@@ -199,7 +199,7 @@ PanelWindow {
     }
 
     function saveStore() {
-        sh("mkdir -p \"$1\" && printf '%s' \"$2\" > \"$1/state.json\"", [stateDir, JSON.stringify({ apps: store.apps, emoji: store.emoji, hidden: store.hidden, semantic: semanticSearchEnabled })]);
+        sh("mkdir -p \"$1\" && printf '%s' \"$2\" > \"$1/state.json\"", [stateDir, JSON.stringify({ apps: store.apps, emoji: store.emoji, hidden: store.hidden })]);
     }
 
     function bumpApp(id) {
