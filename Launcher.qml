@@ -108,6 +108,7 @@ PanelWindow {
     property bool fileIndexing: false
     property bool imageIndexing: false
     property bool semanticSearchEnabled: false
+    property string answerModel: "Hydrogen model"
     property bool semanticSetupRunning: false
     property var contentResults: []
     property string contentQuery: ""
@@ -179,13 +180,29 @@ PanelWindow {
                     emoji: s.emoji || [],
                     hidden: Array.isArray(s.hidden) ? s.hidden : []
                 };
-                root.semanticSearchEnabled = s.semantic === true;
             } catch (e) { /* first run */ }
+            root.loadHydrogenConfig();
+        });
+    }
+
+    // Hydrogen owns indexing and model preferences. Launcher state is only a cache.
+    function loadHydrogenConfig() {
+        runCapture([hydrogenBin, "config", "show"], function (raw) {
+            try {
+                const parsed = JSON.parse(raw);
+                root.semanticSearchEnabled = !!(parsed.settings &&
+                    parsed.settings.indexing &&
+                    parsed.settings.indexing.embeddings_enabled);
+                const configuredModel = parsed.settings && parsed.settings.answer && parsed.settings.answer.model;
+                root.answerModel = configuredModel ? String(configuredModel) : "Hydrogen model";
+            } catch (e) {
+                console.warn("launcher: could not read Hydrogen configuration:", e);
+            }
         });
     }
 
     function saveStore() {
-        sh("mkdir -p \"$1\" && printf '%s' \"$2\" > \"$1/state.json\"", [stateDir, JSON.stringify({ apps: store.apps, emoji: store.emoji, hidden: store.hidden, semantic: semanticSearchEnabled })]);
+        sh("mkdir -p \"$1\" && printf '%s' \"$2\" > \"$1/state.json\"", [stateDir, JSON.stringify({ apps: store.apps, emoji: store.emoji, hidden: store.hidden })]);
     }
 
     function bumpApp(id) {
@@ -276,9 +293,7 @@ PanelWindow {
         if (!force && cachedFiles.length > 0 && (now - fileCacheTime) < 600000) return;
 
         fileIndexing = true;
-        const syncCommand = semanticSearchEnabled
-            ? ["sh", "-c", "HYDROGEN_EMBEDDINGS=1 \"$1\" index sync", "_", hydrogenBin]
-            : [hydrogenBin, "index", "sync"];
+        const syncCommand = [hydrogenBin, "index", "sync"];
         runCapture(syncCommand, function (syncOut) {
             try {
                 const info = JSON.parse(syncOut);
@@ -298,9 +313,7 @@ PanelWindow {
     function rebuildImageIndex() {
         if (imageIndexing) return;
         imageIndexing = true;
-        const command = semanticSearchEnabled
-            ? ["sh", "-c", "HYDROGEN_EMBEDDINGS=1 \"$1\" index sync-images", "_", hydrogenBin]
-            : [hydrogenBin, "index", "sync-images"];
+        const command = [hydrogenBin, "index", "sync-images"];
         runCapture(command, function (_out) {
             root.imageIndexing = false;
             if ((root.mode === "files" || root.mode === "all") && root.query.trim().length >= 2) {
@@ -313,7 +326,7 @@ PanelWindow {
         if (semanticSetupRunning) return;
         semanticSetupRunning = true;
         fileIndexing = true;
-        const script = "HYDROGEN_EMBEDDINGS=1 \"$1\" index sync && HYDROGEN_EMBEDDINGS=1 \"$1\" index embed";
+        const script = "\"$1\" config set indexing.embeddings_enabled true && \"$1\" index sync && \"$1\" index embed";
         runCapture(["sh", "-c", script, "_", hydrogenBin], function (raw) {
             root.semanticSetupRunning = false;
             root.fileIndexing = false;
@@ -336,17 +349,25 @@ PanelWindow {
     }
 
     function disableSemanticSearch() {
-        semanticSearchEnabled = false;
-        contentResults = [];
-        contentQuery = "";
-        saveStore();
-        if (query.trim().length >= 2) requestContentSearch();
+        runCapture([hydrogenBin, "config", "set", "indexing.embeddings_enabled", "false"], function (raw) {
+            try {
+                const result = JSON.parse(raw);
+                if (result.status !== "updated") throw new Error("Hydrogen did not confirm the setting change");
+                root.semanticSearchEnabled = false;
+                root.contentResults = [];
+                root.contentQuery = "";
+                root.saveStore();
+                if (root.query.trim().length >= 2) root.requestContentSearch();
+            } catch (e) {
+                console.warn("launcher: could not disable semantic indexing in Hydrogen config:", e);
+            }
+        });
     }
 
     function requestImageSearch(imagePath) {
         if (!semanticSearchEnabled || !imagePath) return;
         const seq = ++contentSearchSeq;
-        runCapture([hydrogenBin, "query", "--image", String(imagePath), "--limit", "25"], function (raw) {
+        runCapture([hydrogenBin, "query", "--image", String(imagePath)], function (raw) {
             if (seq !== root.contentSearchSeq) return;
             try {
                 const parsed = JSON.parse(raw);
@@ -367,8 +388,7 @@ PanelWindow {
             return;
         }
         const seq = ++contentSearchSeq;
-        const args = [hydrogenBin, "query", q, "--limit", "25"];
-        if (semanticSearchEnabled) args.push("--semantic");
+        const args = [hydrogenBin, "query", q];
         runCapture(args, function (raw) {
             if (seq !== root.contentSearchSeq) return;
             root.contentQuery = q;
@@ -397,8 +417,7 @@ PanelWindow {
         root.aiAnswerSources = [];
         root.aiAnswerQuery = q;
         root.aiAnswerStatus = "loading";
-        const answerArgs = [root.hydrogenBin, "answer", q, "--limit", "6", "--model", "gemma3:1b"];
-        if (root.semanticSearchEnabled) answerArgs.push("--semantic");
+        const answerArgs = [root.hydrogenBin, "answer", q];
         runCapture(answerArgs, function (raw) {
             if (seq !== root.aiAnswerSeq || root.query.trim() !== q) return;
             try {
@@ -1346,10 +1365,10 @@ PanelWindow {
         // 0. Keep the answer slot visible while generating or when local inference is unavailable.
         if (terms.length > 0 && aiAnswerQuery === qTrim && aiAnswerStatus !== "idle" && aiAnswerStatus !== "ready") {
             const statusText = aiAnswerStatus === "loading"
-                ? "Retrieving indexed passages and asking Gemma 3 1B…"
+                ? "Retrieving indexed passages and asking " + root.answerModel + "…"
                 : (aiAnswerStatus === "no_context"
                     ? "No matching indexed passages contain enough text to answer this question."
-                    : "Ollama is unavailable. Start Ollama and check that gemma3:1b is installed.");
+                    : "Ollama is unavailable. Start Ollama and check that the configured Ollama model is installed.");
             out.push({
                 key: "rag-status:" + qTrim,
                 section: "AI Answer · Local RAG",
@@ -1386,7 +1405,7 @@ PanelWindow {
                 title: "AI Answer",
                 subtitle: aiAnswer.replace(/\s+/g, " ").slice(0, 180),
                 glyph: "󰚩",
-                badge: "Gemma 3 1B",
+                badge: root.answerModel,
                 hits: [],
                 score: 1000000,
                 preview: { type: "answer", answer: aiAnswer, sources: aiAnswerSources },
