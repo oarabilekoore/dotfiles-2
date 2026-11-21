@@ -92,3 +92,9 @@ The launcher reads:
 - `~/.local/state/quickshell-launcher/state.json`
 
 Bundled bang defaults are copied into the user configuration directory on first launch. Keep personal snippets and machine-specific settings out of version control.
+
+### Local RAG answers
+
+When a query is entered in Files mode or All mode, the launcher waits briefly for typing to settle and asks Hydrogen for a local answer. Hydrogen retrieves up to six indexed passages and sends only those excerpts to Ollama's local API using the `gemma3:1b` model. The answer appears as the first item in the Files results, includes inline source citations, and exposes actions to copy the answer or open each cited source at its indexed page/line.
+
+Requirements: Ollama must be running locally and `ollama list` must show `gemma3:1b`. Install it with `ollama pull gemma3:1b` if it is missing. The feature does not make cloud requests. It uses lexical/FTS5 retrieval by default; when semantic indexing is already enabled, the launcher also passes `--semantic` so existing MiniLM/CLIP vectors can improve retrieval. See [Hydrogen RAG documentation](https://github.com/oarabilekoore/hydrogen/blob/main/docs/RAG.md).
