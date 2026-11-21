@@ -1449,6 +1449,20 @@ PanelWindow {
                               ]
                             : [{ label: "Open Saved Offline Article", run: () => Quickshell.execDetached([root.hydrogenBin, "--frontend", "--page", String(id)]) }]
                     });
+                } else if (kind === "history") {
+                    const url = String(hit.url || "");
+                    out.push({
+                        key: "hydrogen-history:" + id,
+                        section: "Hydrogen · Reading History",
+                        title: title,
+                        subtitle: excerpt || url,
+                        glyph: "󰋚",
+                        badge: "History",
+                        hits: [],
+                        score: 3000 + (Number(hit.updated_at) || 0) / 1000000000,
+                        preview: { type: "knowledge", excerpt: excerpt || "Previously visited page", kind: kind, url: url },
+                        actions: url ? [{ label: "Open Visited Page", run: () => root.openUrl(url) }] : []
+                    });
                 }
             }
         }
