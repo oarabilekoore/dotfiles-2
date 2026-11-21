@@ -1365,7 +1365,7 @@ PanelWindow {
         // 0. Keep the answer slot visible while generating or when local inference is unavailable.
         if (terms.length > 0 && aiAnswerQuery === qTrim && aiAnswerStatus !== "idle" && aiAnswerStatus !== "ready") {
             const statusText = aiAnswerStatus === "loading"
-                ? "Retrieving indexed passages and asking Gemma 3 1B…"
+                ? "Retrieving indexed passages and asking " + root.answerModel + "…"
                 : (aiAnswerStatus === "no_context"
                     ? "No matching indexed passages contain enough text to answer this question."
                     : "Ollama is unavailable. Start Ollama and check that the configured Ollama model is installed.");
