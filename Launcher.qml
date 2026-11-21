@@ -108,6 +108,7 @@ PanelWindow {
     property bool fileIndexing: false
     property bool imageIndexing: false
     property bool semanticSearchEnabled: false
+    property string answerModel: "Hydrogen model"
     property bool semanticSetupRunning: false
     property var contentResults: []
     property string contentQuery: ""
@@ -192,6 +193,8 @@ PanelWindow {
                 root.semanticSearchEnabled = !!(parsed.settings &&
                     parsed.settings.indexing &&
                     parsed.settings.indexing.embeddings_enabled);
+                const configuredModel = parsed.settings && parsed.settings.answer && parsed.settings.answer.model;
+                root.answerModel = configuredModel ? String(configuredModel) : "Hydrogen model";
             } catch (e) {
                 console.warn("launcher: could not read Hydrogen configuration:", e);
             }
@@ -1402,7 +1405,7 @@ PanelWindow {
                 title: "AI Answer",
                 subtitle: aiAnswer.replace(/\s+/g, " ").slice(0, 180),
                 glyph: "󰚩",
-                badge: "Gemma 3 1B",
+                badge: root.answerModel,
                 hits: [],
                 score: 1000000,
                 preview: { type: "answer", answer: aiAnswer, sources: aiAnswerSources },
