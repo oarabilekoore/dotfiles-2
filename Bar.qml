@@ -2,7 +2,6 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Wayland
-import ".."
 import "modules"
 import "popups"
 
@@ -91,6 +90,7 @@ PanelWindow {
             id: clockMod
             anchors.centerIn: parent
             parentBar: barWindow
+            visible: Config.showClock
         }
     }
 
@@ -144,8 +144,9 @@ PanelWindow {
             }
 
             Item {
-                width: 8
+                width: Config.showNetwork ? 8 : 0
                 height: Theme.barHeight
+                visible: Config.showNetwork
                 Rectangle {
                     anchors.centerIn: parent
                     width: 1
