@@ -397,7 +397,9 @@ PanelWindow {
         root.aiAnswerSources = [];
         root.aiAnswerQuery = q;
         root.aiAnswerStatus = "loading";
-        runCapture([root.hydrogenBin, "answer", q, "--limit", "6", "--model", "gemma3:1b"], function (raw) {
+        const answerArgs = [root.hydrogenBin, "answer", q, "--limit", "6", "--model", "gemma3:1b"];
+        if (root.semanticSearchEnabled) answerArgs.push("--semantic");
+        runCapture(answerArgs, function (raw) {
             if (seq !== root.aiAnswerSeq || root.query.trim() !== q) return;
             try {
                 const result = JSON.parse(raw);
