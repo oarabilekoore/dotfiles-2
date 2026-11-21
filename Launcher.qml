@@ -390,7 +390,7 @@ PanelWindow {
             return;
         }
         const seq = ++contentSearchSeq;
-        const args = [hydrogenBin, "query", q];
+        const args = [hydrogenBin, "search", q];
         runCapture(args, function (raw) {
             if (seq !== root.contentSearchSeq) return;
             root.contentQuery = q;
@@ -1366,7 +1366,7 @@ PanelWindow {
                 preview: { type: "answer", answer: statusText, sources: sameQuery ? aiAnswerSources : [] },
                 actions: status === "loading" ? [] : (status === "ready" && readyPath.length > 0
                     ? [{ label: "Open Answer in Browser", run: () => Quickshell.execDetached(["xdg-open", readyPath]) }]
-                    : [{ label: status === "unavailable" || status === "no_context" ? "Retry Answer" : "Generate Answer",
+                    : [{ label: status === "unavailable" || status === "no_context" ? "Retry Answer" : "Open Hydrogen AI",
                          keepOpen: true, run: () => root.requestAiAnswer() }])
             });
         }
@@ -1375,6 +1375,38 @@ PanelWindow {
         if (terms.length > 0 && contentQuery === qTrim && contentResults.length > 0) {
             for (let i = 0; i < contentResults.length; i++) {
                 const cr = contentResults[i];
+                if (cr.kind === "conversation") {
+                    out.push({
+                        key: "conversation:" + cr.id,
+                        section: "Hydrogen · Saved Conversations",
+                        title: String(cr.title || "Saved conversation"),
+                        subtitle: String(cr.snippet || "").trim(),
+                        glyph: "󰭻",
+                        badge: "Chat",
+                        hits: [],
+                        score: 4200 + (Number(cr.score) || 0),
+                        preview: { type: "answer", answer: String(cr.snippet || ""), sources: [] },
+                        actions: [{ label: "Open Conversation", run: () =>
+                            Quickshell.execDetached([root.hydrogenBin, "--frontend", "--conversation", String(cr.id)]) }]
+                    });
+                    continue;
+                }
+                if (cr.kind === "web_page") {
+                    out.push({
+                        key: "web-page:" + cr.id,
+                        section: "Web · Saved Articles",
+                        title: String(cr.title || "Saved article"),
+                        subtitle: String(cr.snippet || "").trim(),
+                        glyph: "󰖟",
+                        badge: "Article",
+                        hits: [],
+                        score: 3800 + (Number(cr.score) || 0),
+                        preview: { type: "answer", answer: String(cr.snippet || ""), sources: [] },
+                        actions: [{ label: "Open Saved Article", run: () =>
+                            Quickshell.execDetached([root.hydrogenBin, "--frontend", "--page", String(cr.id)]) }]
+                    });
+                    continue;
+                }
                 const p = String(cr.path || "");
                 if (!p || seen[p]) continue;
                 seen[p] = true;
