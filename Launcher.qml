@@ -112,6 +112,11 @@ PanelWindow {
     property var contentResults: []
     property string contentQuery: ""
     property int contentSearchSeq: 0
+    property string aiAnswer: ""
+    property string aiAnswerQuery: ""
+    property string aiAnswerStatus: "idle"
+    property var aiAnswerSources: []
+    property int aiAnswerSeq: 0
 
     // Universal dmenu state
     property var dmenuLines: []
@@ -376,7 +381,40 @@ PanelWindow {
         });
     }
 
+    // Generate one grounded answer after the normal file search has settled.
+    function requestAiAnswer() {
+        const q = root.query.trim();
+        if ((root.mode !== "files" && root.mode !== "all") || q.length < 3 ||
+            q.charAt(0) === "!" || q.charAt(0) === ">" || q.charAt(0) === "=") {
+            root.aiAnswer = "";
+            root.aiAnswerQuery = "";
+            root.aiAnswerSources = [];
+            root.aiAnswerStatus = "idle";
+            return;
+        }
+        const seq = ++root.aiAnswerSeq;
+        root.aiAnswer = "";
+        root.aiAnswerSources = [];
+        root.aiAnswerQuery = q;
+        root.aiAnswerStatus = "loading";
+        runCapture([root.hydrogenBin, "answer", q, "--limit", "6", "--model", "gemma3:1b"], function (raw) {
+            if (seq !== root.aiAnswerSeq || root.query.trim() !== q) return;
+            try {
+                const result = JSON.parse(raw);
+                root.aiAnswerStatus = String(result.status || "unavailable");
+                root.aiAnswer = String(result.answer || "");
+                root.aiAnswerSources = Array.isArray(result.sources) ? result.sources : [];
+            } catch (e) {
+                root.aiAnswerStatus = "unavailable";
+                root.aiAnswer = "";
+                root.aiAnswerSources = [];
+                console.warn("launcher: local RAG answer returned invalid JSON:", e);
+            }
+        });
+    }
+
     Timer { id: contentSearchTimer; interval: 100; repeat: false; onTriggered: root.requestContentSearch() }
+    Timer { id: answerTimer; interval: 850; repeat: false; onTriggered: root.requestAiAnswer() }
     Timer {
         id: indexRevisionTimer
         interval: 1200
@@ -1303,6 +1341,36 @@ PanelWindow {
         const seen = {};
         const qTrim = query.trim();
 
+        // 0. Local RAG answer, grounded in the same indexed document passages.
+        if (terms.length > 0 && aiAnswerStatus === "ready" && aiAnswerQuery === qTrim && aiAnswer.length > 0) {
+            const answerActions = [
+                { label: "Copy Answer", run: () => Quickshell.execDetached(["wl-copy", root.aiAnswer]) }
+            ];
+            for (let i = 0; i < aiAnswerSources.length; i++) {
+                const source = aiAnswerSources[i];
+                const sourcePath = String(source.path || "");
+                if (!sourcePath) continue;
+                const sourcePage = Number(source.page) > 0 ? Number(source.page) : 0;
+                const sourceLine = Number(source.line) > 0 ? Number(source.line) : 0;
+                answerActions.push({
+                    label: "Open Source " + (i + 1) + (sourcePage ? " · Page " + sourcePage : (sourceLine ? " · Line " + sourceLine : "")),
+                    run: () => root.openAtMatch(sourcePath, { page: sourcePage, line: sourceLine, needle: qTrim })
+                });
+            }
+            out.push({
+                key: "rag-answer:" + qTrim,
+                section: "AI Answer · Local RAG",
+                title: "AI Answer",
+                subtitle: aiAnswer.replace(/\s+/g, " ").slice(0, 180),
+                glyph: "󰚩",
+                badge: "Gemma 3 1B",
+                hits: [],
+                score: 1000000,
+                preview: { type: "answer", answer: aiAnswer, sources: aiAnswerSources },
+                actions: answerActions
+            });
+        }
+
         // 1. Hydrogen's lexical + MiniLM + CLIP ranked content and image matches
         if (terms.length > 0 && contentQuery === qTrim && contentResults.length > 0) {
             for (let i = 0; i < contentResults.length; i++) {
@@ -1754,7 +1822,18 @@ PanelWindow {
         const my = ++previewSeq;
         const set = (d) => { if (my === root.previewSeq) root.previewData = d; };
 
-        if (pv.type === "clip") {
+        if (pv.type === "answer") {
+            const sources = Array.isArray(pv.sources) ? pv.sources : [];
+            const sourceText = sources.map((s, i) => {
+                const location = Number(s.page) > 0 ? (" · Page " + s.page) : (Number(s.line) > 0 ? (" · Line " + s.line) : "");
+                return "[" + (i + 1) + "] " + String(s.name || s.path || "Document") + location;
+            }).join("\n");
+            const meta = sources.map((s, i) => {
+                const location = Number(s.page) > 0 ? ("Page " + s.page) : (Number(s.line) > 0 ? ("Line " + s.line) : "Indexed passage");
+                return ["Source " + (i + 1), String(s.name || s.path || "Document") + " · " + location];
+            });
+            set({ kind: "text", key: it.key, text: String(pv.answer || "") + (sourceText ? "\n\nSources\n" + sourceText : ""), meta: meta });
+        } else if (pv.type === "clip") {
             if (pv.image) {
                 const m = pv.meta;
                 runCapture(["sh", "-c",
@@ -1924,6 +2003,7 @@ PanelWindow {
                             root.actionsOpen = false;
                             if (root.mode === "files" || root.mode === "all") {
                                 contentSearchTimer.restart();
+                                answerTimer.restart();
                             }
                         }
                         Keys.onPressed: (ev) => root.handleKey(ev)
