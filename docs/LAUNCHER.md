@@ -36,7 +36,8 @@ quickshell ipc call launcher reloadConfig
 The launcher uses Hydrogen as the single source of truth for roots, indexing policy, search limits and local RAG model settings. It does not pass model names, RAG limits or semantic-indexing environment overrides.
 
 - `hydrogen index sync` to synchronise files and start eligible image indexing.
-- `hydrogen query QUERY` (uses the configured default result limit) for lexical content search.
+- `hydrogen query QUERY` (uses the configured default result limit) for file-content and visual search.
+- `hydrogen search QUERY` for unified file, saved-article, conversation and previous-answer search. Saved knowledge opens in the Hydrogen frontend.
 - `hydrogen query QUERY` also uses semantic retrieval automatically when `indexing.embeddings_enabled` is true. This combines lexical, MiniLM document-vector and CLIP cross-modal retrieval.
 - `hydrogen query --image PATH` (uses the configured default result limit) for image-to-image retrieval. The launcher exposes this as **Find Visually Similar Images** on image-file results.
 - `hydrogen index sync-images` for explicit Rust OCR/image indexing.
