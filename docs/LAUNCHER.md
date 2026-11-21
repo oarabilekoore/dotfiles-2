@@ -33,12 +33,12 @@ quickshell ipc call launcher reloadConfig
 
 ## Hydrogen integration
 
-The launcher uses:
+The launcher uses Hydrogen as the single source of truth for roots, indexing policy, search limits and local RAG model settings. It does not pass model names, RAG limits or semantic-indexing environment overrides.
 
 - `hydrogen index sync` to synchronise files and start eligible image indexing.
-- `hydrogen query QUERY --limit 25` for lexical content search.
-- `hydrogen query QUERY --limit 25 --semantic` after semantic indexing is enabled. This combines lexical, MiniLM document-vector and CLIP cross-modal retrieval.
-- `hydrogen query --image PATH --limit 25` for image-to-image retrieval. The launcher exposes this as **Find Visually Similar Images** on image-file results.
+- `hydrogen query QUERY` (uses the configured default result limit) for lexical content search.
+- `hydrogen query QUERY` also uses semantic retrieval automatically when `indexing.embeddings_enabled` is true. This combines lexical, MiniLM document-vector and CLIP cross-modal retrieval.
+- `hydrogen query --image PATH` (uses the configured default result limit) for image-to-image retrieval. The launcher exposes this as **Find Visually Similar Images** on image-file results.
 - `hydrogen index sync-images` for explicit Rust OCR/image indexing.
 - `hydrogen ocr file PATH` for printed text and `hydrogen ocr file PATH --math` for formula-to-LaTeX recognition.
 
@@ -47,13 +47,14 @@ The launcher uses:
 Semantic indexing is opt-in. Choose **Build Semantic & Visual Index** from the launcher command list. It runs:
 
 ```sh
-HYDROGEN_EMBEDDINGS=1 hydrogen index sync
-HYDROGEN_EMBEDDINGS=1 hydrogen index embed
+hydrogen config set indexing.embeddings_enabled true
+hydrogen index sync
+hydrogen index embed
 ```
 
-The first run downloads MiniLM and CLIP model files and backfills vectors for already indexed documents and images. This initial step can use additional CPU and RAM. The launcher saves the enabled state in `~/.local/state/quickshell-launcher/state.json`; future file and image syncs then run with `HYDROGEN_EMBEDDINGS=1` so changed content receives updated vectors. Text queries use `--semantic` and image actions use the CLIP image encoder.
+The first run downloads MiniLM and CLIP model files and backfills vectors for already indexed documents and images. This initial step can use additional CPU and RAM. Hydrogen stores the enabled state in `~/.config/hydrogen/config.toml`; future syncs automatically maintain vectors without launcher-managed environment variables. Text queries use `--semantic` and image actions use the CLIP image encoder.
 
-To disable semantic queries and future embedding updates, choose **Disable Semantic & Visual Search** in the launcher. Existing vector rows and downloaded model files are not deleted.
+To disable semantic queries and future embedding updates, choose **Disable Semantic & Visual Search** in the launcher. This changes Hydrogen configuration. Existing vector rows and downloaded model files are not deleted.
 
 ### Index and cache refresh
 
@@ -95,6 +96,6 @@ Bundled bang defaults are copied into the user configuration directory on first 
 
 ### Local RAG answers
 
-When a query is entered in Files mode or All mode, the launcher waits briefly for typing to settle and asks Hydrogen for a local answer. Hydrogen retrieves up to six indexed passages and sends only those excerpts to Ollama's local API using the `gemma3:1b` model. The answer appears as the first item in the Files results, includes inline source citations, and exposes actions to copy the answer or open each cited source at its indexed page/line.
+When a query is entered in Files mode or All mode, the launcher waits briefly for typing to settle and asks Hydrogen for a local answer. Hydrogen retrieves the configured number of indexed passages and sends only those excerpts to the locally configured Ollama model. The answer appears as the first item in the Files results, includes inline source citations, and exposes actions to copy the answer or open each cited source at its indexed page/line.
 
-Requirements: Ollama must be running locally and `ollama list` must show `gemma3:1b`. Install it with `ollama pull gemma3:1b` if it is missing. The feature does not make cloud requests. It uses lexical/FTS5 retrieval by default; when semantic indexing is already enabled, the launcher also passes `--semantic` so existing MiniLM/CLIP vectors can improve retrieval. See [Hydrogen RAG documentation](https://github.com/oarabilekoore/hydrogen/blob/main/docs/RAG.md).
+Requirements: Ollama must be running locally and the model configured under `[answer].model` must be installed. The feature does not make cloud requests. Retrieval limits, endpoint, context size and generation parameters all come from Hydrogen configuration. See [Hydrogen configuration](https://github.com/oarabilekoore/hydrogen/blob/main/docs/CONFIGURATION.md). See [Hydrogen RAG documentation](https://github.com/oarabilekoore/hydrogen/blob/main/docs/RAG.md).
