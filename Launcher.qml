@@ -22,8 +22,8 @@ PanelWindow {
 
     readonly property string homeDir: Quickshell.env("HOME")
     readonly property string runtimeDir: Quickshell.env("XDG_RUNTIME_DIR") || "/tmp"
-    readonly property string stateDir: homeDir + "/.local/state/quickshell-launcher"
-    readonly property string fileCachePath: stateDir + "/file-index.txt"
+    property string stateDir: homeDir + "/.local/state/quickshell-launcher"
+    property string fileCachePath: stateDir + "/file-index.txt"
     readonly property string bangConfigPath: homeDir + "/.config/quickshell/data/bangs.json"
     readonly property string hydrogenBin: "hydrogen"
     // Open-at-match commands. Placeholders: {file} {page} {line} {find}. Empty pdfViewerCmd = auto-detect
@@ -32,7 +32,7 @@ PanelWindow {
     property var editorCmd: ["nvim", "+{line}", "{file}"]
     property bool editorInTerminal: true
 
-    readonly property var searchDirs: [
+    property var searchDirs: [
         homeDir + "/Documents",
         homeDir + "/Downloads",
         homeDir + "/Pictures",
@@ -111,6 +111,7 @@ PanelWindow {
     property string answerModel: "Hydrogen model"
     property bool semanticSetupRunning: false
     property var contentResults: []
+    property var knowledgeResults: []
     property string contentQuery: ""
     property int contentSearchSeq: 0
     property string aiAnswer: ""
@@ -197,6 +198,12 @@ PanelWindow {
                     parsed.settings.indexing.embeddings_enabled);
                 const configuredModel = parsed.settings && parsed.settings.answer && parsed.settings.answer.model;
                 root.answerModel = configuredModel ? String(configuredModel) : "Hydrogen model";
+                const effective = parsed.effective_paths || {};
+                if (effective.state_dir) {
+                    root.stateDir = String(effective.state_dir);
+                    root.fileCachePath = root.stateDir + "/file-index.txt";
+                }
+                if (Array.isArray(effective.roots)) root.searchDirs = effective.roots.map(String);
             } catch (e) {
                 console.warn("launcher: could not read Hydrogen configuration:", e);
             }
@@ -1433,7 +1440,10 @@ PanelWindow {
                         hits: [],
                         score: 3800 + (Number(hit.updated_at) || 0) / 1000000000,
                         preview: { type: "knowledge", excerpt: excerpt, kind: kind, url: url },
-                        actions: url ? [{ label: "Open Original Article", run: () => root.openUrl(url) }] : []
+                        actions: [
+                            { label: "Open Saved Offline Article", run: () => Quickshell.execDetached([root.hydrogenBin, "--frontend", "--page", String(id)]) },
+                            ...(url ? [{ label: "Open Original Article", run: () => root.openUrl(url) }] : [])
+                        ]
                     });
                 }
             }
