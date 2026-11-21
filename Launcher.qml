@@ -1369,7 +1369,7 @@ PanelWindow {
                 ? "Retrieving indexed passages and asking Gemma 3 1B…"
                 : (aiAnswerStatus === "no_context"
                     ? "No matching indexed passages contain enough text to answer this question."
-                    : "Ollama is unavailable. Start Ollama and check that gemma3:1b is installed.");
+                    : "Ollama is unavailable. Start Ollama and check that the configured Ollama model is installed.");
             out.push({
                 key: "rag-status:" + qTrim,
                 section: "AI Answer · Local RAG",
