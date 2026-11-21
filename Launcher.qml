@@ -179,8 +179,22 @@ PanelWindow {
                     emoji: s.emoji || [],
                     hidden: Array.isArray(s.hidden) ? s.hidden : []
                 };
-                root.semanticSearchEnabled = s.semantic === true;
             } catch (e) { /* first run */ }
+            root.loadHydrogenConfig();
+        });
+    }
+
+    // Hydrogen owns indexing and model preferences. Launcher state is only a cache.
+    function loadHydrogenConfig() {
+        runCapture([hydrogenBin, "config", "show"], function (raw) {
+            try {
+                const parsed = JSON.parse(raw);
+                root.semanticSearchEnabled = !!(parsed.settings &&
+                    parsed.settings.indexing &&
+                    parsed.settings.indexing.embeddings_enabled);
+            } catch (e) {
+                console.warn("launcher: could not read Hydrogen configuration:", e);
+            }
         });
     }
 
@@ -336,17 +350,25 @@ PanelWindow {
     }
 
     function disableSemanticSearch() {
-        semanticSearchEnabled = false;
-        contentResults = [];
-        contentQuery = "";
-        saveStore();
-        if (query.trim().length >= 2) requestContentSearch();
+        runCapture([hydrogenBin, "config", "set", "indexing.embeddings_enabled", "false"], function (raw) {
+            try {
+                const result = JSON.parse(raw);
+                if (result.status !== "updated") throw new Error("Hydrogen did not confirm the setting change");
+                root.semanticSearchEnabled = false;
+                root.contentResults = [];
+                root.contentQuery = "";
+                root.saveStore();
+                if (root.query.trim().length >= 2) root.requestContentSearch();
+            } catch (e) {
+                console.warn("launcher: could not disable semantic indexing in Hydrogen config:", e);
+            }
+        });
     }
 
     function requestImageSearch(imagePath) {
         if (!semanticSearchEnabled || !imagePath) return;
         const seq = ++contentSearchSeq;
-        runCapture([hydrogenBin, "query", "--image", String(imagePath), "--limit", "25"], function (raw) {
+        runCapture([hydrogenBin, "query", "--image", String(imagePath)], function (raw) {
             if (seq !== root.contentSearchSeq) return;
             try {
                 const parsed = JSON.parse(raw);
@@ -367,8 +389,7 @@ PanelWindow {
             return;
         }
         const seq = ++contentSearchSeq;
-        const args = [hydrogenBin, "query", q, "--limit", "25"];
-        if (semanticSearchEnabled) args.push("--semantic");
+        const args = [hydrogenBin, "query", q];
         runCapture(args, function (raw) {
             if (seq !== root.contentSearchSeq) return;
             root.contentQuery = q;
@@ -397,8 +418,7 @@ PanelWindow {
         root.aiAnswerSources = [];
         root.aiAnswerQuery = q;
         root.aiAnswerStatus = "loading";
-        const answerArgs = [root.hydrogenBin, "answer", q, "--limit", "6", "--model", "gemma3:1b"];
-        if (root.semanticSearchEnabled) answerArgs.push("--semantic");
+        const answerArgs = [root.hydrogenBin, "answer", q];
         runCapture(answerArgs, function (raw) {
             if (seq !== root.aiAnswerSeq || root.query.trim() !== q) return;
             try {
