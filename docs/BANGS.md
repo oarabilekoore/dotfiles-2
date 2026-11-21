@@ -23,7 +23,7 @@ Typing only `!` displays the available bang list.
 Edit:
 
 ```text
-~/.config/quickshell/bangs.json
+~/.config/quickshell/data/data/bangs.json
 ```
 
 The file is a JSON array. Each object needs a unique `bang`, a `type`, and the

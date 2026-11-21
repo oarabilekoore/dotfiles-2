@@ -24,7 +24,7 @@ PanelWindow {
     readonly property string runtimeDir: Quickshell.env("XDG_RUNTIME_DIR") || "/tmp"
     readonly property string stateDir: homeDir + "/.local/state/quickshell-launcher"
     readonly property string fileCachePath: stateDir + "/file-index.txt"
-    readonly property string bangConfigPath: homeDir + "/.config/quickshell/bangs.json"
+    readonly property string bangConfigPath: homeDir + "/.config/quickshell/data/bangs.json"
     readonly property string hydrogenBin: "hydrogen"
     // Open-at-match commands. Placeholders: {file} {page} {line} {find}. Empty pdfViewerCmd = auto-detect
     // (zathura, okular, evince, mupdf, then xdg-open).
@@ -923,7 +923,7 @@ PanelWindow {
         const bang = findBang(name);
         if (!bang) {
             return [{ key: "bang-unknown:" + name, section: "Bangs", title: "Unknown bang: !" + name,
-                      subtitle: "Edit ~/.config/quickshell/bangs.json to add it. Try !sl, !sh or !yt.", glyph: "󰋔", badge: "Help", hits: [],
+                      subtitle: "Edit ~/.config/quickshell/data/bangs.json to add it. Try !sl, !sh or !yt.", glyph: "󰋔", badge: "Help", hits: [],
                       actions: [{ label: "Open launcher documentation", run: () => root.openUrl("file://" + Quickshell.shellPath("docs/LAUNCHER.md")) }] }];
         }
         if (bang.type === "cmd" || bang.type === "command") {

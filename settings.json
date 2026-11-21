@@ -13,5 +13,6 @@
   "showBluetooth": true,
   "showBattery": true,
   "showClock": true,
+  "clockFormat": "time",
   "terminalCmd": "ghostty"
 }

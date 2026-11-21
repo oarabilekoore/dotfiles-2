@@ -1,50 +1,63 @@
 [
   {
+    "bang": "sh",
+    "aliases": [
+      "exec"
+    ],
+    "label": "Shell Command",
+    "type": "sh",
+    "description": "Run a shell command"
+  },
+  {
+    "bang": "sl",
+    "aliases": [
+      "sleep"
+    ],
+    "label": "Sleep",
+    "type": "cmd",
+    "cmd": "systemctl suspend",
+    "description": "Suspend the system"
+  },
+  {
+    "bang": "lock",
+    "label": "Lock Screen",
+    "type": "cmd",
+    "cmd": "hyprlock",
+    "description": "Lock screen with hyprlock"
+  },
+  {
+    "bang": "reboot",
+    "label": "Restart",
+    "type": "cmd",
+    "cmd": "systemctl reboot",
+    "confirm": true,
+    "description": "Reboot the system"
+  },
+  {
+    "bang": "off",
+    "aliases": [
+      "poweroff",
+      "shutdown"
+    ],
+    "label": "Shut Down",
+    "type": "cmd",
+    "cmd": "systemctl poweroff",
+    "confirm": true,
+    "description": "Power off the system"
+  },
+  {
     "bang": "yt",
     "label": "YouTube",
     "type": "url",
     "template": "https://www.youtube.com/results?search_query={query}"
   },
   {
-    "bang": "g",
-    "label": "Google",
+    "bang": "r",
+    "aliases": [
+      "reddit"
+    ],
+    "label": "Reddit",
     "type": "url",
-    "template": "https://www.google.com/search?q={query}"
+    "template": "https://www.reddit.com/search/?q={query}"
   },
-  {
-    "bang": "ddg",
-    "label": "DuckDuckGo",
-    "type": "url",
-    "template": "https://duckduckgo.com/?q={query}"
-  },
-  {
-    "bang": "gh",
-    "label": "GitHub",
-    "type": "url",
-    "template": "https://github.com/search?q={query}"
-  },
-  {
-    "bang": "aw",
-    "label": "Arch Wiki",
-    "type": "url",
-    "template": "https://wiki.archlinux.org/index.php?search={query}"
-  },
-  {
-    "bang": "aur",
-    "label": "AUR",
-    "type": "url",
-    "template": "https://aur.archlinux.org/packages?K={query}"
-  },
-  {
-    "bang": "w",
-    "label": "Wikipedia",
-    "type": "url",
-    "template": "https://en.wikipedia.org/w/index.php?search={query}"
-  },
-  {
-    "bang": "maps",
-    "label": "Google Maps",
-    "type": "url",
-    "template": "https://www.google.com/maps/search/{query}"
-  }
 ]
