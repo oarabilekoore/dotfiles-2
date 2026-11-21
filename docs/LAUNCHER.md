@@ -52,7 +52,7 @@ hydrogen index sync
 hydrogen index embed
 ```
 
-The first run downloads MiniLM and CLIP model files and backfills vectors for already indexed documents and images. This initial step can use additional CPU and RAM. Hydrogen stores the enabled state in `~/.config/hydrogen/config.toml`; future syncs automatically maintain vectors without launcher-managed environment variables. Text queries use `--semantic` and image actions use the CLIP image encoder.
+The first run downloads MiniLM and CLIP model files and backfills vectors for already indexed documents and images. This initial step can use additional CPU and RAM. Hydrogen stores the enabled state in `~/.config/hydrogen/config.toml`; future syncs automatically maintain vectors without launcher-managed environment variables. Text queries automatically use semantic retrieval while it is enabled; image actions use the CLIP image encoder.
 
 To disable semantic queries and future embedding updates, choose **Disable Semantic & Visual Search** in the launcher. This changes Hydrogen configuration. Existing vector rows and downloaded model files are not deleted.
 
