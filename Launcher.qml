@@ -1345,7 +1345,7 @@ PanelWindow {
         // 0. Keep the answer slot visible while generating or when local inference is unavailable.
         if (terms.length > 0 && aiAnswerQuery === qTrim && aiAnswerStatus !== "idle" && aiAnswerStatus !== "ready") {
             const statusText = aiAnswerStatus === "loading"
-                ? "Retrieving indexed passages and asking Gemma 3 1B…"
+                ? "Retrieving indexed passages and asking Qwen 3.5 2B…"
                 : (aiAnswerStatus === "no_context"
                     ? "No matching indexed passages contain enough text to answer this question."
                     : "Ollama is unavailable. Start Ollama and check that gemma3:1b is installed.");
@@ -1385,7 +1385,7 @@ PanelWindow {
                 title: "AI Answer",
                 subtitle: aiAnswer.replace(/\s+/g, " ").slice(0, 180),
                 glyph: "󰚩",
-                badge: "Gemma 3 1B",
+                badge: "Qwen 3.5 2B",
                 hits: [],
                 score: 1000000,
                 preview: { type: "answer", answer: aiAnswer, sources: aiAnswerSources },
