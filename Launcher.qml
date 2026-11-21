@@ -22,8 +22,8 @@ PanelWindow {
 
     readonly property string homeDir: Quickshell.env("HOME")
     readonly property string runtimeDir: Quickshell.env("XDG_RUNTIME_DIR") || "/tmp"
-    readonly property string stateDir: homeDir + "/.local/state/quickshell-launcher"
-    readonly property string fileCachePath: stateDir + "/file-index.txt"
+    property string stateDir: homeDir + "/.local/state/quickshell-launcher"
+    property string fileCachePath: stateDir + "/file-index.txt"
     readonly property string bangConfigPath: homeDir + "/.config/quickshell/data/bangs.json"
     readonly property string hydrogenBin: "hydrogen"
     // Open-at-match commands. Placeholders: {file} {page} {line} {find}. Empty pdfViewerCmd = auto-detect
@@ -32,7 +32,7 @@ PanelWindow {
     property var editorCmd: ["nvim", "+{line}", "{file}"]
     property bool editorInTerminal: true
 
-    readonly property var searchDirs: [
+    property var searchDirs: [
         homeDir + "/Documents",
         homeDir + "/Downloads",
         homeDir + "/Pictures",
@@ -111,6 +111,7 @@ PanelWindow {
     property string answerModel: "Hydrogen model"
     property bool semanticSetupRunning: false
     property var contentResults: []
+    property var knowledgeResults: []
     property string contentQuery: ""
     property int contentSearchSeq: 0
     property string aiAnswer: ""
@@ -197,6 +198,12 @@ PanelWindow {
                     parsed.settings.indexing.embeddings_enabled);
                 const configuredModel = parsed.settings && parsed.settings.answer && parsed.settings.answer.model;
                 root.answerModel = configuredModel ? String(configuredModel) : "Hydrogen model";
+                const effective = parsed.effective_paths || {};
+                if (effective.state_dir) {
+                    root.stateDir = String(effective.state_dir);
+                    root.fileCachePath = root.stateDir + "/file-index.txt";
+                }
+                if (Array.isArray(effective.roots)) root.searchDirs = effective.roots.map(String);
             } catch (e) {
                 console.warn("launcher: could not read Hydrogen configuration:", e);
             }
@@ -374,6 +381,7 @@ PanelWindow {
             try {
                 const parsed = JSON.parse(raw);
                 root.contentResults = Array.isArray(parsed) ? parsed : [];
+                root.knowledgeResults = [];
                 root.contentQuery = root.query.trim();
             } catch (e) {
                 root.contentResults = [];
@@ -386,65 +394,33 @@ PanelWindow {
         const q = query.trim();
         if ((mode !== "files" && mode !== "all") || q.length < 2 || q.charAt(0) === "!" || q.charAt(0) === ">" || q.charAt(0) === "=") {
             contentResults = [];
+            knowledgeResults = [];
             contentQuery = q;
             return;
         }
         const seq = ++contentSearchSeq;
-        const args = [hydrogenBin, "query", q];
+        const args = [hydrogenBin, "search", q];
         runCapture(args, function (raw) {
             if (seq !== root.contentSearchSeq) return;
             root.contentQuery = q;
             try {
                 const parsed = JSON.parse(raw);
-                root.contentResults = Array.isArray(parsed) ? parsed : [];
+                root.contentResults = Array.isArray(parsed.files) ? parsed.files : [];
+                root.knowledgeResults = Array.isArray(parsed.knowledge) ? parsed.knowledge : [];
             } catch (e) {
                 root.contentResults = [];
+                root.knowledgeResults = [];
             }
         });
     }
 
     // Generate one grounded answer after the normal file search has settled.
+    // AI generation is deliberately an explicit action. The launcher opens the
+    // persistent Hydrogen app immediately; inference happens there, not in Quickshell.
     function requestAiAnswer() {
         const q = root.query.trim();
-        if ((root.mode !== "files" && root.mode !== "all") || q.length < 3 ||
-            q.charAt(0) === "!" || q.charAt(0) === ">" || q.charAt(0) === "=") {
-            root.aiAnswer = "";
-            root.aiAnswerQuery = "";
-            root.aiAnswerSources = [];
-            root.aiAnswerHtmlPath = "";
-            root.aiAnswerError = "";
-            root.aiAnswerStatus = "idle";
-            return;
-        }
-        const seq = ++root.aiAnswerSeq;
-        root.aiAnswer = "";
-        root.aiAnswerSources = [];
-        root.aiAnswerHtmlPath = "";
-        root.aiAnswerError = "";
-        root.aiAnswerQuery = q;
-        root.aiAnswerStatus = "loading";
-        const answerArgs = [root.hydrogenBin, "answer", q, "--html"];
-        runCapture(answerArgs, function (raw) {
-            if (seq !== root.aiAnswerSeq || root.query.trim() !== q) return;
-            try {
-                const result = JSON.parse(raw);
-                root.aiAnswerStatus = String(result.status || "unavailable");
-                root.aiAnswer = String(result.answer || "");
-                root.aiAnswerSources = Array.isArray(result.sources) ? result.sources : [];
-                root.aiAnswerHtmlPath = String(result.html_path || "");
-                root.aiAnswerError = String(result.error || "");
-                if (root.aiAnswerStatus === "ready" && root.aiAnswerHtmlPath.length > 0)
-                    Quickshell.execDetached(["xdg-open", root.aiAnswerHtmlPath]);
-                else if (root.aiAnswerStatus === "ready")
-                    root.aiAnswerStatus = "unavailable";
-            } catch (e) {
-                root.aiAnswerStatus = "unavailable";
-                root.aiAnswer = "";
-                root.aiAnswerSources = [];
-                root.aiAnswerError = String(e);
-                console.warn("launcher: local RAG answer returned invalid JSON:", e);
-            }
-        });
+        if (q.length < 3) return;
+        Quickshell.execDetached([root.hydrogenBin, "--frontend", "--ask", q]);
     }
 
     Timer { id: contentSearchTimer; interval: 100; repeat: false; onTriggered: root.requestContentSearch() }
@@ -1376,32 +1352,18 @@ PanelWindow {
 
         // AI is an explicit action. Search never starts model inference by itself.
         if (terms.length > 0 && qTrim.length >= 3) {
-            const sameQuery = aiAnswerQuery === qTrim;
-            const status = sameQuery ? aiAnswerStatus : "idle";
-            const readyPath = sameQuery ? aiAnswerHtmlPath : "";
-            const statusText = status === "loading"
-                ? "Retrieving indexed passages and generating with " + root.answerModel + "…"
-                : (status === "ready"
-                    ? "Your source-grounded answer is ready. Open it in your browser."
-                    : (status === "no_context"
-                        ? "No indexed passages were available to answer this question. Try again after indexing."
-                        : (status === "unavailable"
-                            ? (aiAnswerError.length > 0 ? aiAnswerError : "Answer generation failed. Select to retry.")
-                            : "Generate a source-grounded answer from your indexed documents. Nothing runs until you select this item.")));
+            const statusText = "Open Hydrogen AI to generate an answer grounded in your indexed documents. Nothing runs until selected.";
             out.push({
                 key: "rag-ask:" + qTrim,
                 section: "AI · On demand",
-                title: status === "loading" ? "Generating AI Answer…" : (status === "ready" ? "AI Answer Ready" : "Ask AI about this search"),
+                title: "Ask Hydrogen AI about this search",
                 subtitle: statusText,
                 glyph: "󰚩",
-                badge: status === "ready" ? root.answerModel : (status === "loading" ? "Working" : "Ask"),
+                badge: "Ask",
                 hits: [],
                 score: 1000000,
-                preview: { type: "answer", answer: statusText, sources: sameQuery ? aiAnswerSources : [] },
-                actions: status === "loading" ? [] : (status === "ready" && readyPath.length > 0
-                    ? [{ label: "Open Answer in Browser", run: () => Quickshell.execDetached(["xdg-open", readyPath]) }]
-                    : [{ label: status === "unavailable" || status === "no_context" ? "Retry Answer" : "Generate Answer",
-                         keepOpen: true, run: () => root.requestAiAnswer() }])
+                preview: { type: "answer", answer: statusText, sources: [] },
+                actions: [{ label: "Open Hydrogen AI", keepOpen: true, run: () => root.requestAiAnswer() }]
             });
         }
 
@@ -1443,6 +1405,65 @@ PanelWindow {
                     preview: { type: "file", path: p, isDir: false, page: page, line: line, pagePreview: String(cr.preview || "") },
                     actions: buildFileActions(p, dir, false, name, jump)
                 });
+            }
+        }
+
+        // Saved Hydrogen conversations and captured web articles share the same search.
+        if (terms.length > 0 && contentQuery === qTrim && knowledgeResults.length > 0) {
+            for (let i = 0; i < knowledgeResults.length; i++) {
+                const hit = knowledgeResults[i];
+                const kind = String(hit.kind || "");
+                const id = Number(hit.id) || 0;
+                const title = String(hit.title || (kind === "conversation" ? "Saved conversation" : "Saved article"));
+                const excerpt = String(hit.excerpt || "");
+                if (!id) continue;
+                if (kind === "conversation") {
+                    out.push({
+                        key: "hydrogen-conversation:" + id,
+                        section: "Hydrogen · Saved Conversations",
+                        title: title,
+                        subtitle: excerpt || "Saved AI conversation",
+                        glyph: "󰭹",
+                        badge: "Chat",
+                        hits: [],
+                        score: 4200 + (Number(hit.updated_at) || 0) / 1000000000,
+                        preview: { type: "knowledge", excerpt: excerpt, kind: kind },
+                        actions: [{ label: "Open Conversation", run: () => Quickshell.execDetached([root.hydrogenBin, "--frontend", "--conversation", String(id)]) }]
+                    });
+                } else if (kind === "web_page") {
+                    const url = String(hit.url || "");
+                    out.push({
+                        key: "hydrogen-web:" + id,
+                        section: "Hydrogen · Saved Web Articles",
+                        title: title,
+                        subtitle: excerpt || url,
+                        glyph: "󰖟",
+                        badge: "Article",
+                        hits: [],
+                        score: 3800 + (Number(hit.updated_at) || 0) / 1000000000,
+                        preview: { type: "knowledge", excerpt: excerpt, kind: kind, url: url },
+                        actions: url
+                            ? [
+                                { label: "Open Saved Offline Article", run: () => Quickshell.execDetached([root.hydrogenBin, "--frontend", "--page", String(id)]) },
+                                { label: "Open Original Article", run: () => root.openUrl(url) }
+                              ]
+                            : [{ label: "Open Saved Offline Article", run: () => Quickshell.execDetached([root.hydrogenBin, "--frontend", "--page", String(id)]) }]
+                    });
+                } else if (kind === "history") {
+                    const url = String(hit.url || "");
+                    out.push({
+                        key: "hydrogen-history:" + id,
+                        section: "Hydrogen · Reading History",
+                        title: title,
+                        subtitle: excerpt || url,
+                        glyph: "󰋚",
+                        badge: "History",
+                        hits: [],
+                        score: 3000 + (Number(hit.updated_at) || 0) / 1000000000,
+                        preview: { type: "knowledge", excerpt: excerpt || "Previously visited page", kind: kind, url: url },
+                        actions: url ? [{ label: "Open Visited Page", run: () => root.openUrl(url) }] : []
+                    });
+                }
             }
         }
 
@@ -1856,7 +1877,10 @@ PanelWindow {
         const my = ++previewSeq;
         const set = (d) => { if (my === root.previewSeq) root.previewData = d; };
 
-        if (pv.type === "answer") {
+        if (pv.type === "knowledge") {
+            const meta = pv.kind === "conversation" ? [["Type", "Saved conversation"]] : [["Type", "Saved web article"], ["URL", String(pv.url || "")]];
+            set({ kind: "text", key: it.key, text: String(pv.excerpt || "Open this saved item to view its full content."), meta: meta });
+        } else if (pv.type === "answer") {
             const sources = Array.isArray(pv.sources) ? pv.sources : [];
             const sourceText = sources.map((s, i) => {
                 const location = Number(s.page) > 0 ? (" · Page " + s.page) : (Number(s.line) > 0 ? (" · Line " + s.line) : "");
@@ -1998,526 +2022,3 @@ PanelWindow {
 
             // ---- search row
             Item {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 54
-
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: 16
-                    anchors.rightMargin: 16
-                    spacing: 12
-
-                    Text {
-                        text: root.mode === "dmenu" ? "󰘳"
-                            : (root.query.charAt(0) === "!" ? ((["cmd", "command", "sh", "shell"].indexOf(root.currentBangType()) >= 0) ? "󰆍" : "󰖟") : "󰍉")
-                        font.family: Theme.fontFamily
-                        font.pixelSize: 19
-                        color: Theme.primary
-                    }
-
-                    TextInput {
-                        id: searchInput
-                        Layout.fillWidth: true
-                        color: Theme.on_surface
-                        selectionColor: Theme.primary
-                        selectedTextColor: Theme.on_primary
-                        font.family: Theme.fontFamily
-                        font.pixelSize: 16
-                        clip: true
-
-                        onTextChanged: {
-                            if (root.mode === "all" && text.length === 1 && root.sigils[text] !== undefined) {
-                                const m = root.sigils[text];
-                                text = "";
-                                root.setMode(m);
-                                return;
-                            }
-                            root.query = text;
-                            root.selected = 0;
-                            root.actionsOpen = false;
-                            if (root.mode === "files" || root.mode === "all") {
-                                contentSearchTimer.restart();
-                            }
-                        }
-                        Keys.onPressed: (ev) => root.handleKey(ev)
-
-                        Text {
-                            visible: searchInput.text.length === 0
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: root.mode === "dmenu" ? root.dmenuPrompt : root.modeMeta[root.mode].hint
-                            color: Theme.on_surface_variant
-                            font: searchInput.font
-                            elide: Text.ElideRight
-                            width: parent.width
-                        }
-                    }
-
-                    Rectangle {
-                        visible: searchInput.text.length > 0
-                        Layout.preferredWidth: 22
-                        Layout.preferredHeight: 22
-                        radius: 0
-                        color: clearMouse.containsMouse ? Theme.alpha(Theme.foreground, 0.14) : Theme.surface_variant
-                        border.width: 1
-                        border.color: Theme.outline_variant
-                        Text { anchors.centerIn: parent; text: "✕"; font.pixelSize: 10; color: Theme.on_surface_variant }
-                        MouseArea {
-                            id: clearMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            onClicked: { searchInput.text = ""; searchInput.forceActiveFocus(); }
-                        }
-                    }
-                }
-            }
-
-            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.outline_variant }
-
-            // ---- body
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                spacing: 0
-
-                Item {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-
-                    ListView {
-                        id: listView
-                        anchors.fill: parent
-                        anchors.margins: 6
-                        visible: !root.grid && root.results.length > 0
-                        clip: true
-                        model: root.results
-                        boundsBehavior: Flickable.StopAtBounds
-                        reuseItems: false
-
-                        delegate: Item {
-                            id: row
-                            required property var modelData
-                            required property int index
-                            readonly property bool cur: index === root.selected
-                            readonly property bool head: index === 0 || root.results[index - 1].section !== modelData.section
-
-                            width: listView.width
-                            height: (head ? 24 : 0) + 44
-
-                            Text {
-                                visible: row.head
-                                x: 8
-                                y: 6
-                                text: row.modelData.section
-                                font.family: Theme.fontFamily
-                                font.pixelSize: 10
-                                font.bold: true
-                                font.letterSpacing: 0.5
-                                color: Theme.on_surface_variant
-                            }
-
-                            Rectangle {
-                                id: rowBg
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                anchors.bottom: parent.bottom
-                                height: 44
-                                radius: 0
-                                color: row.cur ? Theme.alpha(Theme.primary, 0.14) : "transparent"
-                                border.width: row.cur ? 1 : 0
-                                border.color: Theme.alpha(Theme.primary, 0.50)
-
-                                RowLayout {
-                                    anchors.fill: parent
-                                    anchors.leftMargin: 10
-                                    anchors.rightMargin: 12
-                                    spacing: 12
-
-                                    Item {
-                                        Layout.preferredWidth: 30
-                                        Layout.preferredHeight: 30
-
-                                        readonly property string resolvedIcon: row.modelData.icon ? root.iconSrc(row.modelData.icon, row.modelData.iconFb) : ""
-                                        readonly property bool showImage: resolvedIcon !== "" && iconImg.status !== Image.Error
-
-                                        Rectangle {
-                                            anchors.fill: parent
-                                            visible: !parent.showImage
-                                            radius: 0
-                                            color: row.cur ? Theme.alpha(Theme.primary, 0.20) : Theme.surface_variant
-                                            border.width: 1
-                                            border.color: Theme.outline_variant
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: row.modelData.glyph !== "" ? row.modelData.glyph : "󰈔"
-                                                font.family: Theme.fontFamily
-                                                font.pixelSize: 16
-                                                color: row.cur ? Theme.primary : Theme.on_surface_variant
-                                            }
-                                        }
-                                        Image {
-                                            id: iconImg
-                                            anchors.fill: parent
-                                            visible: parent.showImage
-                                            source: parent.resolvedIcon
-                                            sourceSize.width: 64
-                                            sourceSize.height: 64
-                                            fillMode: Image.PreserveAspectFit
-                                            asynchronous: true
-                                            smooth: true
-                                        }
-                                    }
-
-                                    ColumnLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 1
-
-                                        Text {
-                                            Layout.fillWidth: true
-                                            textFormat: Text.StyledText
-                                            text: root.highlight(row.modelData.title, row.modelData.hits, String(Theme.primary))
-                                            elide: Text.ElideRight
-                                            maximumLineCount: 1
-                                            color: Theme.on_surface
-                                            font.family: Theme.fontFamily
-                                            font.pixelSize: Theme.fontSize
-                                        }
-                                        Text {
-                                            Layout.fillWidth: true
-                                            visible: text !== ""
-                                            text: row.modelData.subtitle
-                                            elide: Text.ElideMiddle
-                                            color: Theme.on_surface_variant
-                                            font.family: Theme.fontFamily
-                                            font.pixelSize: Theme.fontSizeSmall
-                                        }
-                                    }
-
-                                    Text {
-                                        visible: row.modelData.badge !== "" && !row.cur
-                                        text: row.modelData.badge
-                                        color: (row.modelData.badge === "Phrase" || row.modelData.badge.indexOf("Match") === 0 || row.modelData.badge.indexOf("Vision") === 0) ? Theme.primary : Theme.on_surface_variant
-                                        font.family: Theme.fontFamily
-                                        font.pixelSize: 10
-                                    }
-                                    Rectangle {
-                                        visible: row.cur
-                                        Layout.preferredWidth: 22
-                                        Layout.preferredHeight: 20
-                                        radius: 0
-                                        color: Theme.alpha(Theme.foreground, 0.10)
-                                        border.width: 1
-                                        border.color: Theme.outline_variant
-                                        Text { anchors.centerIn: parent; text: "↵"; font.pixelSize: 12; color: Theme.on_surface_variant }
-                                    }
-                                }
-
-                                MouseArea {
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    acceptedButtons: Qt.LeftButton | Qt.RightButton
-                                    onPositionChanged: root.selected = row.index
-                                    onClicked: (m) => {
-                                        root.selected = row.index;
-                                        if (m.button === Qt.RightButton) { root.actionsOpen = true; root.actionIndex = 0; }
-                                        else root.runAction(row.modelData, row.modelData.actions[0]);
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    GridView {
-                        id: gridView
-                        anchors.fill: parent
-                        anchors.margins: 8
-                        visible: root.grid && root.results.length > 0
-                        clip: true
-                        model: root.results
-                        boundsBehavior: Flickable.StopAtBounds
-                        cellWidth: Math.floor(width / Math.max(1, Math.floor(width / 54)))
-                        cellHeight: 52
-                        onWidthChanged: root.gridCols = Math.max(1, Math.floor(width / 54))
-
-                        delegate: Item {
-                            id: cell
-                            required property var modelData
-                            required property int index
-                            width: gridView.cellWidth
-                            height: gridView.cellHeight
-
-                            Rectangle {
-                                anchors.fill: parent
-                                anchors.margins: 2
-                                radius: 0
-                                color: index === root.selected ? Theme.alpha(Theme.primary, 0.20) : "transparent"
-                                border.width: index === root.selected ? 1 : 0
-                                border.color: Theme.alpha(Theme.primary, 0.6)
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: cell.modelData.glyph
-                                    font.pixelSize: 26
-                                }
-                                MouseArea {
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    onPositionChanged: root.selected = cell.index
-                                    onClicked: { root.selected = cell.index; root.runAction(cell.modelData, cell.modelData.actions[0]); }
-                                }
-                            }
-                        }
-                    }
-
-                    Text {
-                        anchors.centerIn: parent
-                        visible: root.results.length === 0
-                        horizontalAlignment: Text.AlignHCenter
-                        text: root.emptyText()
-                        color: Theme.on_surface_variant
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSize
-                    }
-                }
-
-                // ---- preview pane
-                Rectangle {
-                    visible: root.showPreview
-                    Layout.preferredWidth: 280
-                    Layout.fillHeight: true
-                    color: "transparent"
-
-                    Rectangle { anchors.left: parent.left; width: 1; height: parent.height; color: Theme.outline_variant }
-
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 14
-                        spacing: 10
-
-                        Rectangle {
-                            visible: root.previewData.kind === "image"
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 190
-                            radius: 0
-                            color: Theme.surface_variant
-                            border.width: 1
-                            border.color: Theme.outline_variant
-                            clip: true
-                            Image {
-                                anchors.fill: parent
-                                anchors.margins: 4
-                                source: root.previewData.kind === "image" ? root.previewData.source : ""
-                                fillMode: Image.PreserveAspectFit
-                                asynchronous: true
-                                sourceSize.width: 640
-                                sourceSize.height: 400
-                            }
-                        }
-
-                        Rectangle {
-                            visible: root.previewData.kind === "text"
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            radius: 0
-                            color: Theme.surface_variant
-                            border.width: 1
-                            border.color: Theme.outline_variant
-                            clip: true
-                            Text {
-                                anchors.fill: parent
-                                anchors.margins: 10
-                                text: root.previewData.kind === "text" ? root.previewData.text : ""
-                                wrapMode: Text.WrapAnywhere
-                                elide: Text.ElideRight
-                                color: Theme.on_surface
-                                font.family: Theme.fontFamily
-                                font.pixelSize: Theme.fontSizeSmall
-                            }
-                        }
-
-                        Item { visible: root.previewData.kind !== "text"; Layout.fillHeight: true }
-
-                        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.outline_variant }
-
-                        Repeater {
-                            model: root.previewData.meta || []
-                            delegate: RowLayout {
-                                required property var modelData
-                                Layout.fillWidth: true
-                                spacing: 10
-                                Text {
-                                    Layout.preferredWidth: 74
-                                    text: parent.modelData[0]
-                                    color: Theme.on_surface_variant
-                                    font.family: Theme.fontFamily
-                                    font.pixelSize: Theme.fontSizeSmall
-                                }
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: parent.modelData[1]
-                                    wrapMode: Text.WrapAnywhere
-                                    maximumLineCount: 3
-                                    elide: Text.ElideRight
-                                    color: Theme.on_surface
-                                    font.family: Theme.fontFamily
-                                    font.pixelSize: Theme.fontSizeSmall
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.outline_variant }
-
-            // ---- footer
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 36
-                Layout.leftMargin: 16
-                Layout.rightMargin: 16
-                spacing: 14
-
-                Text {
-                    Layout.fillWidth: true
-                    elide: Text.ElideRight
-                    text: root.grid && root.current ? (root.current.glyph + "  " + root.current.title)
-                          : (root.results.length + (root.results.length === 1 ? " result" : " results")
-                             + (root.fileIndexing ? " · indexing…" : (root.imageIndexing ? " · indexing images…" : "")))
-                    color: Theme.on_surface_variant
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontSizeSmall
-                }
-                Text {
-                    visible: root.current !== null
-                    text: "↵  " + (root.current ? root.current.actions[0].label : "")
-                    color: Theme.on_surface
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontSizeSmall
-                }
-                Text {
-                    visible: root.current !== null && root.current.actions.length > 1
-                    text: "⌃B  Options"
-                    color: Theme.on_surface_variant
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontSizeSmall
-                }
-                Text {
-                    visible: root.mode !== "dmenu"
-                    text: "⇥  Mode"
-                    color: Theme.on_surface_variant
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontSizeSmall
-                }
-            }
-        }
-
-        // ---- actions panel (Ctrl+B / Ctrl+K / right click)
-        Rectangle {
-            visible: root.actionsOpen && root.current !== null
-            anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            anchors.rightMargin: 14
-            anchors.bottomMargin: 44
-            width: 280
-            height: actionCol.implicitHeight + 12
-            radius: 0
-            color: Theme.surface_variant
-            border.width: 1
-            border.color: Theme.outline
-
-            Column {
-                id: actionCol
-                anchors.fill: parent
-                anchors.margins: 6
-                spacing: 2
-
-                Repeater {
-                    model: root.current ? root.current.actions : []
-                    delegate: Rectangle {
-                        id: act
-                        required property var modelData
-                        required property int index
-                        width: actionCol.width
-                        height: 30
-                        radius: 0
-                        color: index === root.actionIndex ? Theme.alpha(Theme.primary, 0.22) : "transparent"
-                        border.width: index === root.actionIndex ? 1 : 0
-                        border.color: Theme.alpha(Theme.primary, 0.5)
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            anchors.left: parent.left
-                            anchors.leftMargin: 10
-                            text: act.modelData.label
-                            color: act.modelData.confirm ? Theme.warning : Theme.on_surface
-                            font.family: Theme.fontFamily
-                            font.pixelSize: Theme.fontSize
-                        }
-                        MouseArea {
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            onPositionChanged: root.actionIndex = act.index
-                            onClicked: { root.actionsOpen = false; root.runAction(root.current, act.modelData); }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    Rectangle {
-        id: launcherConfirmOverlay
-        anchors.fill: parent
-        visible: root.open && root.confirmKey.length > 0
-        z: 1000
-        color: Qt.rgba(0, 0, 0, 0.58)
-        opacity: visible ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: 130 } }
-        MouseArea { anchors.fill: parent; onClicked: root.confirmKey = "" }
-
-        Rectangle {
-            anchors.centerIn: parent
-            width: 320
-            height: confirmColumn.implicitHeight + 34
-            color: Theme.surface
-            border.width: 1
-            border.color: Theme.outline
-            scale: launcherConfirmOverlay.visible ? 1 : 0.96
-            Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
-            MouseArea { anchors.fill: parent }
-
-            ColumnLayout {
-                id: confirmColumn
-                anchors.fill: parent
-                anchors.margins: 18
-                spacing: 12
-                Text { Layout.alignment: Qt.AlignHCenter; text: "󰀦"; font.family: Theme.fontFamily; font.pixelSize: 28; color: Theme.warning }
-                Text {
-                    Layout.alignment: Qt.AlignHCenter
-                    text: "Confirm action?"
-                    font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize; font.bold: true; color: Theme.foreground
-                }
-                Text {
-                    Layout.fillWidth: true
-                    text: "" + root.confirmKey.slice(root.confirmKey.indexOf("|") + 1)
-                    wrapMode: Text.WordWrap; horizontalAlignment: Text.AlignHCenter
-                    font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: Theme.on_surface_variant
-                }
-                RowLayout {
-                    Layout.alignment: Qt.AlignHCenter
-                    spacing: 10
-                    Rectangle {
-                        Layout.preferredWidth: 100; Layout.preferredHeight: 32
-                        color: Theme.surface_variant; border.width: 1; border.color: Theme.outline_variant
-                        Text { anchors.centerIn: parent; text: "Cancel"; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; color: Theme.foreground }
-                        MouseArea { anchors.fill: parent; onClicked: root.confirmKey = "" }
-                    }
-                    Rectangle {
-                        Layout.preferredWidth: 100; Layout.preferredHeight: 32
-                        color: Theme.alpha(Theme.error, 0.18); border.width: 1; border.color: Theme.error
-                        Text { anchors.centerIn: parent; text: "Confirm"; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall; font.bold: true; color: Theme.error }
-                        MouseArea { anchors.fill: parent; onClicked: root.confirmPendingAction() }
-                    }
-                }
-            }
-        }
-    }
-}
