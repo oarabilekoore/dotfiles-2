@@ -118,6 +118,7 @@ PanelWindow {
     property string aiAnswerStatus: "idle"
     property var aiAnswerSources: []
     property string aiAnswerHtmlPath: ""
+    property string aiAnswerError: ""
     property int aiAnswerSeq: 0
 
     // Universal dmenu state
@@ -410,6 +411,8 @@ PanelWindow {
             root.aiAnswer = "";
             root.aiAnswerQuery = "";
             root.aiAnswerSources = [];
+            root.aiAnswerHtmlPath = "";
+            root.aiAnswerError = "";
             root.aiAnswerStatus = "idle";
             return;
         }
@@ -417,6 +420,7 @@ PanelWindow {
         root.aiAnswer = "";
         root.aiAnswerSources = [];
         root.aiAnswerHtmlPath = "";
+        root.aiAnswerError = "";
         root.aiAnswerQuery = q;
         root.aiAnswerStatus = "loading";
         const answerArgs = [root.hydrogenBin, "answer", q, "--html"];
@@ -428,6 +432,7 @@ PanelWindow {
                 root.aiAnswer = String(result.answer || "");
                 root.aiAnswerSources = Array.isArray(result.sources) ? result.sources : [];
                 root.aiAnswerHtmlPath = String(result.html_path || "");
+                root.aiAnswerError = String(result.error || "");
                 if (root.aiAnswerStatus === "ready" && root.aiAnswerHtmlPath.length > 0)
                     Quickshell.execDetached(["xdg-open", root.aiAnswerHtmlPath]);
                 else if (root.aiAnswerStatus === "ready")
@@ -436,6 +441,7 @@ PanelWindow {
                 root.aiAnswerStatus = "unavailable";
                 root.aiAnswer = "";
                 root.aiAnswerSources = [];
+                root.aiAnswerError = String(e);
                 console.warn("launcher: local RAG answer returned invalid JSON:", e);
             }
         });
@@ -1380,7 +1386,7 @@ PanelWindow {
                     : (status === "no_context"
                         ? "No indexed passages were available to answer this question. Try again after indexing."
                         : (status === "unavailable"
-                            ? "Answer generation failed. Select to retry and inspect the reported Ollama error."
+                            ? (aiAnswerError.length > 0 ? aiAnswerError : "Answer generation failed. Select to retry.")
                             : "Generate a source-grounded answer from your indexed documents. Nothing runs until you select this item.")));
             out.push({
                 key: "rag-ask:" + qTrim,
