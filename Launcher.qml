@@ -1343,7 +1343,28 @@ PanelWindow {
         const seen = {};
         const qTrim = query.trim();
 
-        // 0. Local RAG answer, grounded in the same indexed document passages.
+        // 0. Keep the answer slot visible while generating or when local inference is unavailable.
+        if (terms.length > 0 && aiAnswerQuery === qTrim && aiAnswerStatus !== "idle" && aiAnswerStatus !== "ready") {
+            const statusText = aiAnswerStatus === "loading"
+                ? "Retrieving indexed passages and asking Gemma 3 1B…"
+                : (aiAnswerStatus === "no_context"
+                    ? "No matching indexed passages contain enough text to answer this question."
+                    : "Ollama is unavailable. Start Ollama and check that gemma3:1b is installed.");
+            out.push({
+                key: "rag-status:" + qTrim,
+                section: "AI Answer · Local RAG",
+                title: aiAnswerStatus === "loading" ? "Generating Answer…" : "AI Answer Unavailable",
+                subtitle: statusText,
+                glyph: "󰚩",
+                badge: aiAnswerStatus === "loading" ? "Working" : "Local",
+                hits: [],
+                score: 1000000,
+                preview: { type: "answer", answer: statusText, sources: [] },
+                actions: [{ label: "Retry", keepOpen: true, run: () => answerTimer.restart() }]
+            });
+        }
+
+        // 1. Local RAG answer, grounded in the same indexed document passages.
         if (terms.length > 0 && aiAnswerStatus === "ready" && aiAnswerQuery === qTrim && aiAnswer.length > 0) {
             const answerActions = [
                 { label: "Copy Answer", run: () => Quickshell.execDetached(["wl-copy", root.aiAnswer]) }
