@@ -381,6 +381,7 @@ PanelWindow {
             try {
                 const parsed = JSON.parse(raw);
                 root.contentResults = Array.isArray(parsed) ? parsed : [];
+                root.knowledgeResults = [];
                 root.contentQuery = root.query.trim();
             } catch (e) {
                 root.contentResults = [];
@@ -393,6 +394,7 @@ PanelWindow {
         const q = query.trim();
         if ((mode !== "files" && mode !== "all") || q.length < 2 || q.charAt(0) === "!" || q.charAt(0) === ">" || q.charAt(0) === "=") {
             contentResults = [];
+            knowledgeResults = [];
             contentQuery = q;
             return;
         }
