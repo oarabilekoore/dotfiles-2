@@ -1376,23 +1376,37 @@ PanelWindow {
             for (let i = 0; i < contentResults.length; i++) {
                 const cr = contentResults[i];
                 const kind = String(cr.kind || "file");
-                if (kind === "conversation" || kind === "web_page") {
-                    const id = String(cr.id || "");
-                    if (!id) continue;
-                    const key = kind + ":" + id;
-                    if (seen[key]) continue;
-                    seen[key] = true;
-                    const isConversation = kind === "conversation";
-                    const title = String(cr.title || (isConversation ? "Saved conversation" : "Saved article"));
+                // Hydrogen search returns saved conversations, generated answers and web pages.
+                // Answers belong to their conversation; web pages are opened by their page ID.
+                if (kind === "conversation" || kind === "answer" || kind === "web_page" || kind === "article") {
+                    const id = String(cr.id || "").trim();
+                    const url = String(cr.url || "").trim();
+                    const isConversation = kind === "conversation" || kind === "answer";
+                    const title = String(cr.title || (isConversation
+                        ? (kind === "answer" ? "Saved answer" : "Saved conversation")
+                        : "Saved article")).trim();
+                    if (!id && !url && !title) continue;
+
+                    // Deduplicate saved pages by URL, with title as a fallback identity.
+                    const normalizedUrl = url.toLowerCase().replace(/#.*$/, "").replace(/\/+$/, "");
+                    const normalizedTitle = title.toLowerCase().replace(/\s+/g, " ").trim();
+                    const identity = isConversation
+                        ? "conversation:" + (id || normalizedTitle)
+                        : "article:" + (normalizedUrl || normalizedTitle);
+                    if (seen[identity]) continue;
+                    seen[identity] = true;
                     const snippet = String(cr.snippet || "").trim();
                     const targetFlag = isConversation ? "--conversation" : "--page";
+                    const section = isConversation
+                        ? (kind === "answer" ? "Hydrogen · Saved answers" : "Hydrogen · Saved conversations")
+                        : "Hydrogen · Saved articles";
                     out.push({
-                        key: key,
-                        section: isConversation ? "Hydrogen · Saved conversations" : "Hydrogen · Saved articles",
+                        key: identity,
+                        section: section,
                         title: title,
-                        subtitle: snippet || (isConversation ? "Saved AI conversation" : String(cr.url || "Saved web article")),
+                        subtitle: snippet || (isConversation ? "Saved Hydrogen conversation" : (url || "Saved web article")),
                         glyph: isConversation ? "󰭻" : "󰖟",
-                        badge: isConversation ? "Chat" : "Article",
+                        badge: isConversation ? (kind === "answer" ? "Answer" : "Chat") : "Article",
                         hits: [],
                         score: 3500,
                         preview: { type: "answer", answer: snippet || title, sources: [] },
@@ -1433,7 +1447,10 @@ PanelWindow {
                     glyph: fmt.glyph,
                     badge: badgeText,
                     hits: hh,
-                    score: 2500 + (Number(cr.score) || 0),
+                    // Similarity-backed file hits always outrank saved knowledge results.
+                    score: Number(cr.vec) > 0
+                        ? 100000 + (Number(cr.score) || 0)
+                        : 2500 + (Number(cr.score) || 0),
                     preview: { type: "file", path: p, isDir: false, page: page, line: line, pagePreview: String(cr.preview || "") },
                     actions: buildFileActions(p, dir, false, name, jump)
                 });
@@ -2095,7 +2112,7 @@ PanelWindow {
                             readonly property bool head: index === 0 || root.results[index - 1].section !== modelData.section
 
                             width: listView.width
-                            height: (head ? 24 : 0) + 44
+                            height: (head ? 24 : 0) + 52
 
                             Text {
                                 visible: row.head
@@ -2114,7 +2131,7 @@ PanelWindow {
                                 anchors.left: parent.left
                                 anchors.right: parent.right
                                 anchors.bottom: parent.bottom
-                                height: 44
+                                height: 52
                                 radius: 0
                                 color: row.cur ? Theme.alpha(Theme.primary, 0.14) : "transparent"
                                 border.width: row.cur ? 1 : 0
@@ -2167,8 +2184,10 @@ PanelWindow {
 
                                         Text {
                                             Layout.fillWidth: true
+                                            Layout.preferredHeight: 18
                                             textFormat: Text.StyledText
                                             text: root.highlight(row.modelData.title, row.modelData.hits, String(Theme.primary))
+                                            wrapMode: Text.NoWrap
                                             elide: Text.ElideRight
                                             maximumLineCount: 1
                                             color: Theme.on_surface
@@ -2177,8 +2196,11 @@ PanelWindow {
                                         }
                                         Text {
                                             Layout.fillWidth: true
+                                            Layout.preferredHeight: 16
                                             visible: text !== ""
                                             text: row.modelData.subtitle
+                                            wrapMode: Text.NoWrap
+                                            maximumLineCount: 1
                                             elide: Text.ElideMiddle
                                             color: Theme.on_surface_variant
                                             font.family: Theme.fontFamily
