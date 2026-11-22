@@ -1674,7 +1674,8 @@ PanelWindow {
 
         const topApps = apps.slice(0, 6);
         const cmds = commandItems(terms, 4);
-        // Include Hydrogen's saved articles, answers and conversations in All mode.\n        const files = q.length >= 2 ? fileItemsFromCache(terms, 24) : [];
+        // Include Hydrogen's saved articles, answers and conversations in All mode.
+        const files = q.length >= 2 ? fileItemsFromCache(terms, 24) : [];
 
         // In All mode, application and command matches always precede files.
         // Explicit file intent is handled by Files mode (the / prefix).
