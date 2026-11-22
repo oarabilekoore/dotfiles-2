@@ -1385,7 +1385,7 @@ PanelWindow {
                     const title = String(cr.title || (isConversation
                         ? (kind === "answer" ? "Saved answer" : "Saved conversation")
                         : "Saved article")).trim();
-                    if (!id && !url && !title) continue;
+                    if (!id) continue;
 
                     // Deduplicate saved pages by URL, with title as a fallback identity.
                     const normalizedUrl = url.toLowerCase().replace(/#.*$/, "").replace(/\/+$/, "");
@@ -1408,7 +1408,7 @@ PanelWindow {
                         glyph: isConversation ? "󰭻" : "󰖟",
                         badge: isConversation ? (kind === "answer" ? "Answer" : "Chat") : "Article",
                         hits: [],
-                        score: 3500,
+                        score: 8000,
                         preview: { type: "answer", answer: snippet || title, sources: [] },
                         actions: [{
                             label: isConversation ? "Open Conversation" : "Open Saved Article",
@@ -1674,7 +1674,7 @@ PanelWindow {
 
         const topApps = apps.slice(0, 6);
         const cmds = commandItems(terms, 4);
-        const files = q.length >= 2 ? fileItemsFromCache(terms, 6) : [];
+        // Include Hydrogen's saved articles, answers and conversations in All mode.\n        const files = q.length >= 2 ? fileItemsFromCache(terms, 24) : [];
 
         // In All mode, application and command matches always precede files.
         // Explicit file intent is handled by Files mode (the / prefix).
