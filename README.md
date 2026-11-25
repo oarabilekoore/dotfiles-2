@@ -5,7 +5,8 @@ Personal Linux desktop configuration built around **Hyprland** and **Quickshell*
 ## Overview
 
 - `shell.qml` is the shell entry point. It creates the bar instances, launcher, and IPC handlers.
-- `Bar.qml` and related components provide the panel and status indicators. Heavy popup windows, the launcher, are lazy-loaded and released after closing to reduce idle memory.
+- `Bar.qml` and related components provide the panel and status indicators. Heavy popup windows and the launcher are lazy-loaded and released after closing to reduce idle memory.
+- `Desktop.qml` provides a wallpaper-level desktop surface with draggable, persisted clock and system widgets plus a right-click context menu.
 - `Launcher.qml` provides application/command search, hybrid file and image search, clipboard history, emoji selection, snippets, calculator and unit conversion, configurable bangs, and file OCR.
 - `Config.qml` and `Theme.qml` provide persisted preferences and appearance configuration.
 - `popups/` and other QML components provide focused system controls.
@@ -79,6 +80,12 @@ Hydrogen stores its state under `~/.local/state/quickshell-launcher` by default.
 
 The shell intentionally does not run a notification server or OSD. SwayNC owns desktop notifications, avoiding two applications competing for `org.freedesktop.Notifications`. Short status messages ("Bluetooth enabled", ...) are sent with `notify-send`, and SwayNC can be controlled through `swaync-client`.
 
+## Desktop widgets and context menu
+
+The desktop layer runs below normal application windows and above the wallpaper. Right-click an empty desktop area to open the desktop menu. The clock and system widgets can be dragged independently; their positions and visibility are saved in `settings.json`.
+
+The menu can hide/show widgets, launch Waypaper, open the Quickshell configuration in Neovim, and refresh the generated theme palette. Press `Esc` to dismiss the menu.
+
 ## Keyboard
 
 `Esc` closes whatever is open: bar popups, the launcher (first closes its action menu or confirmation) and the active launcher or popup. `quickshell ipc call popup close` does the same from a keybind.
@@ -90,7 +97,7 @@ The shell intentionally does not run a notification server or OSD. SwayNC owns d
 - SwayNC (`swaync-client`) and `notify-send` (libnotify)
 - `cliphist`, `wl-copy`, `wtype` for clipboard workflows
 - `~/.config/hypr/scripts/caffeine.sh` (toggle script; it must create/remove `/tmp/caffeine_on`)
-- `powerprofilesctl`, `hyprsunset`, `xdg-open`, and a terminal (`terminalCmd`, default `ghostty`)
+- `powerprofilesctl`, `hyprsunset`, `xdg-open`, `waypaper` (desktop wallpaper menu action), and a terminal (`terminalCmd`, default `ghostty`)
 - To build the native helpers: a C compiler, `make` and `stb` (`stb_image.h`)
 
 ## Installation
