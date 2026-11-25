@@ -19,7 +19,8 @@ PopupBase {
     readonly property bool isPendingCharge: Battery.plugged && !Battery.charging
     readonly property real changeRateWatts: dev ? Math.abs(dev.changeRate) : 0.0
 
-    property string currentProfile: "balanced"
+    property string currentProfile: ""
+    property bool profileLoaded: false
 
     Process {
         id: getProfileProc
@@ -27,10 +28,15 @@ PopupBase {
         stdout: StdioCollector {
             onTextChanged: {
                 let p = text.trim();
-                if (p.length > 0) root.currentProfile = p;
+                if (p.length > 0) {
+                    root.currentProfile = p;
+                    root.profileLoaded = true;
+                }
             }
         }
     }
+
+    Component.onCompleted: getProfileProc.running = true
 
     Process {
         id: setProfileProc
@@ -210,8 +216,8 @@ PopupBase {
                         Layout.fillWidth: true
                         height: 30
                         radius: 4
-                        color: root.currentProfile === "performance" ? Theme.primary : (perfMouse.containsMouse ? Theme.surface_variant : "transparent")
-                        border.color: root.currentProfile === "performance" ? Theme.primary : Theme.outline_variant
+                        color: root.profileLoaded && root.currentProfile === "performance" ? Theme.primary : (perfMouse.containsMouse ? Theme.surface_variant : "transparent")
+                        border.color: root.profileLoaded && root.currentProfile === "performance" ? Theme.primary : Theme.outline_variant
                         border.width: 1
 
                         RowLayout {
@@ -221,14 +227,14 @@ PopupBase {
                                 text: "󰓅"
                                 font.family: Theme.fontFamily
                                 font.pixelSize: 12
-                                color: root.currentProfile === "performance" ? Theme.on_primary : Theme.foreground
+                                color: root.profileLoaded && root.currentProfile === "performance" ? Theme.on_primary : Theme.foreground
                             }
                             Text {
                                 text: "Perf"
                                 font.family: Theme.fontFamily
                                 font.pixelSize: 11
                                 font.bold: true
-                                color: root.currentProfile === "performance" ? Theme.on_primary : Theme.foreground
+                                color: root.profileLoaded && root.currentProfile === "performance" ? Theme.on_primary : Theme.foreground
                             }
                         }
 
@@ -250,8 +256,8 @@ PopupBase {
                         Layout.fillWidth: true
                         height: 30
                         radius: 4
-                        color: root.currentProfile === "balanced" ? Theme.primary : (balMouse.containsMouse ? Theme.surface_variant : "transparent")
-                        border.color: root.currentProfile === "balanced" ? Theme.primary : Theme.outline_variant
+                        color: root.profileLoaded && root.currentProfile === "balanced" ? Theme.primary : (balMouse.containsMouse ? Theme.surface_variant : "transparent")
+                        border.color: root.profileLoaded && root.currentProfile === "balanced" ? Theme.primary : Theme.outline_variant
                         border.width: 1
 
                         RowLayout {
@@ -261,14 +267,14 @@ PopupBase {
                                 text: "󰾅"
                                 font.family: Theme.fontFamily
                                 font.pixelSize: 12
-                                color: root.currentProfile === "balanced" ? Theme.on_primary : Theme.foreground
+                                color: root.profileLoaded && root.currentProfile === "balanced" ? Theme.on_primary : Theme.foreground
                             }
                             Text {
                                 text: "Bal"
                                 font.family: Theme.fontFamily
                                 font.pixelSize: 11
                                 font.bold: true
-                                color: root.currentProfile === "balanced" ? Theme.on_primary : Theme.foreground
+                                color: root.profileLoaded && root.currentProfile === "balanced" ? Theme.on_primary : Theme.foreground
                             }
                         }
 
@@ -290,8 +296,8 @@ PopupBase {
                         Layout.fillWidth: true
                         height: 30
                         radius: 4
-                        color: root.currentProfile === "power-saver" ? Theme.primary : (saverMouse.containsMouse ? Theme.surface_variant : "transparent")
-                        border.color: root.currentProfile === "power-saver" ? Theme.primary : Theme.outline_variant
+                        color: root.profileLoaded && root.currentProfile === "power-saver" ? Theme.primary : (saverMouse.containsMouse ? Theme.surface_variant : "transparent")
+                        border.color: root.profileLoaded && root.currentProfile === "power-saver" ? Theme.primary : Theme.outline_variant
                         border.width: 1
 
                         RowLayout {
@@ -301,14 +307,14 @@ PopupBase {
                                 text: "󰾆"
                                 font.family: Theme.fontFamily
                                 font.pixelSize: 12
-                                color: root.currentProfile === "power-saver" ? Theme.on_primary : Theme.foreground
+                                color: root.profileLoaded && root.currentProfile === "power-saver" ? Theme.on_primary : Theme.foreground
                             }
                             Text {
                                 text: "Saver"
                                 font.family: Theme.fontFamily
                                 font.pixelSize: 11
                                 font.bold: true
-                                color: root.currentProfile === "power-saver" ? Theme.on_primary : Theme.foreground
+                                color: root.profileLoaded && root.currentProfile === "power-saver" ? Theme.on_primary : Theme.foreground
                             }
                         }
 
