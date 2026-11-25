@@ -34,8 +34,7 @@ Rectangle {
 
     function notifyCaffeine(enabled) {
         Quickshell.execDetached([
-            "notify-send", "--app-name=Quickshell", "--icon=coffee-symbolic",
-            "--expire-time=1800", "-h",
+            "notify-send", "--app-name=Quickshell", "--expire-time=1800", "-h",
             "string:x-canonical-private-synchronous:caffeine",
             "Caffeine", enabled ? "Enabled" : "Disabled"
         ]);
