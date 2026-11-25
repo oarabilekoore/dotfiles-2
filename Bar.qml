@@ -161,12 +161,12 @@ PanelWindow {
         }
     }
 
-    LazyLoader {
-        activeAsync: barWindow.activePopup === "battery"
-        BatteryPopup {
-            parentBar: barWindow
-            anchorItem: batMod
-        }
+    // Keep the power popup pre-rendered so its controls and profile state are
+    // ready before it is shown. Only the layer surface visibility changes.
+    BatteryPopup {
+        visible: barWindow.activePopup === "battery"
+        parentBar: barWindow
+        anchorItem: batMod
     }
 
     LazyLoader {
