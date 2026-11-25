@@ -9,6 +9,7 @@ Rectangle {
     // caffeine.sh creates / removes this flag file; we just watch it.
     readonly property string flagPath: "/tmp/caffeine_on"
     property bool isCaffeineOn: false
+    property bool initialized: false
 
     // Event-driven: no polling process. loadFailed == flag file absent == off.
     FileView {
@@ -17,8 +18,27 @@ Rectangle {
         watchChanges: true
         printErrors: false
         onFileChanged: reload()
-        onLoaded: root.isCaffeineOn = true
-        onLoadFailed: root.isCaffeineOn = false
+        onLoaded: {
+            const changed = root.initialized && !root.isCaffeineOn;
+            root.isCaffeineOn = true;
+            root.initialized = true;
+            if (changed) root.notifyCaffeine(true);
+        }
+        onLoadFailed: {
+            const changed = root.initialized && root.isCaffeineOn;
+            root.isCaffeineOn = false;
+            root.initialized = true;
+            if (changed) root.notifyCaffeine(false);
+        }
+    }
+
+    function notifyCaffeine(enabled) {
+        Quickshell.execDetached([
+            "notify-send", "--app-name=Quickshell", "--icon=coffee-symbolic",
+            "--expire-time=1800", "-h",
+            "string:x-canonical-private-synchronous:caffeine",
+            "Caffeine", enabled ? "Enabled" : "Disabled"
+        ]);
     }
 
     Process {
