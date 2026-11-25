@@ -58,13 +58,14 @@ Scope {
     // Icon string for the card: embedded image, absolute path, or themed icon name.
     // Status notifications often come from small shell scripts without an app icon,
     // so infer a useful symbolic icon from their title/body as a fallback.
-    function statusIcon(n) {
+    function statusGlyph(n) {
+        if (n.appIcon || n.image) return "";
         const text = ((n.summary || "") + " " + (n.body || "")).toLowerCase();
-        if (text.includes("airplane") || text.includes("flight mode")) return "airplane-mode-symbolic";
-        if (text.includes("caffeine") || text.includes("keep awake")) return "coffee-symbolic";
-        if (text.includes("mute") || text.includes("volume")) return "audio-volume-muted-symbolic";
-        if (text.includes("caps lock") || text.includes("capslock")) return "caps-lock-symbolic";
-        if (text.includes("mouse") || text.includes("touchpad") || text.includes("pointer")) return "input-touchpad-symbolic";
+        if (text.includes("airplane") || text.includes("flight mode")) return "󰀝";
+        if (text.includes("caffeine") || text.includes("keep awake")) return "󰅶";
+        if (text.includes("mute") || text.includes("volume")) return "";
+        if (text.includes("caps lock") || text.includes("capslock")) return "󰪛";
+        if (text.includes("mouse") || text.includes("touchpad") || text.includes("pointer")) return "󰍽";
         return "";
     }
 
@@ -169,6 +170,7 @@ Scope {
             summary: n.summary || "",
             body: n.body || "",
             icon: root.iconSource(n),
+            glyph: root.statusGlyph(n),
             urgency: urgency,
             value: value,
             timeout: root.timeoutFor(n, urgency),
