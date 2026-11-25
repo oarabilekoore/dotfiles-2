@@ -56,10 +56,25 @@ Scope {
     }
 
     // Icon string for the card: embedded image, absolute path, or themed icon name.
+    // Status notifications often come from small shell scripts without an app icon,
+    // so infer a useful symbolic icon from their title/body as a fallback.
+    function statusIcon(n) {
+        const text = ((n.summary || "") + " " + (n.body || "")).toLowerCase();
+        if (text.includes("airplane") || text.includes("flight mode")) return "airplane-mode-symbolic";
+        if (text.includes("caffeine") || text.includes("keep awake")) return "coffee-symbolic";
+        if (text.includes("mute") || text.includes("volume")) return "audio-volume-muted-symbolic";
+        if (text.includes("caps lock") || text.includes("capslock")) return "caps-lock-symbolic";
+        if (text.includes("mouse") || text.includes("touchpad") || text.includes("pointer")) return "input-touchpad-symbolic";
+        return "";
+    }
+
     function iconSource(n) {
         if (n.image && n.image.length > 0) return n.image;
         const ic = n.appIcon || "";
-        if (ic.length === 0) return "";
+        if (ic.length === 0) {
+            const fallback = root.statusIcon(n);
+            return fallback.length > 0 ? Quickshell.iconPath(fallback, true) : "";
+        }
         if (ic.startsWith("/")) return "file://" + ic;
         if (ic.startsWith("file:") || ic.startsWith("image:")) return ic;
         return Quickshell.iconPath(ic, true);
