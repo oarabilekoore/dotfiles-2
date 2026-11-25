@@ -59,7 +59,7 @@ Scope {
     // Status notifications often come from small shell scripts without an app icon,
     // so infer a useful symbolic icon from their title/body as a fallback.
     function statusGlyph(n) {
-        if (n.appIcon || n.image) return "";
+        if (n.image) return "";
         const text = ((n.summary || "") + " " + (n.body || "")).toLowerCase();
         if (text.includes("airplane") || text.includes("flight mode")) return "󰀝";
         if (text.includes("caffeine") || text.includes("keep awake")) return "󰅶";
@@ -71,6 +71,9 @@ Scope {
 
     function iconSource(n) {
         if (n.image && n.image.length > 0) return n.image;
+        // Recognised shell status notifications use the Nerd Font glyph below;
+        // do not try loading their appIcon as a missing theme icon.
+        if (root.statusGlyph(n).length > 0) return "";
         const ic = n.appIcon || "";
         if (ic.length === 0) {
             return "";
