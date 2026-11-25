@@ -51,9 +51,9 @@ Rectangle {
 
         onClicked: (mouse) => {
             if (mouse.button === Qt.RightButton) {
-                if (root.sink && root.sink.audio) {
-                    root.sink.audio.muted = !root.sink.audio.muted;
-                }
+                // Use the same notifier as the hardware mute keybind so the
+                // icon and OSD stay consistent whichever control toggles mute.
+                Quickshell.execDetached(["prgnotifier", "volume", "toggle"]);
             } else {
                 if (parentBar) {
                     parentBar.activePopup = (parentBar.activePopup === root.popupName ? "" : root.popupName);
