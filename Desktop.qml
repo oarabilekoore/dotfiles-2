@@ -71,6 +71,15 @@ PanelWindow {
         }
     }
 
+    // When the menu is open, a left-click outside it dismisses the menu.
+    MouseArea {
+        anchors.fill: parent
+        visible: root.menuOpen
+        acceptedButtons: Qt.LeftButton
+        z: 5
+        onClicked: root.menuOpen = false
+    }
+
     Item {
         id: widgetsLayer
         anchors.fill: parent
