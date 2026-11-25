@@ -73,8 +73,7 @@ Scope {
         if (n.image && n.image.length > 0) return n.image;
         const ic = n.appIcon || "";
         if (ic.length === 0) {
-            const fallback = root.statusIcon(n);
-            return fallback.length > 0 ? Quickshell.iconPath(fallback, true) : "";
+            return "";
         }
         if (ic.startsWith("/")) return "file://" + ic;
         if (ic.startsWith("file:") || ic.startsWith("image:")) return ic;
