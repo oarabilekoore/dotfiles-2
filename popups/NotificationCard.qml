@@ -17,6 +17,7 @@ Rectangle {
     required property string summary
     required property string body
     required property string icon
+    required property string glyph
     required property int urgency      // 0 low, 1 normal, 2 critical
     required property int value        // 0-100 for OSD cards, -1 when there is no progress bar
     required property int timeout      // ms, 0 = stays until dismissed
@@ -41,7 +42,7 @@ Rectangle {
     readonly property int barHeight: 8
 
     readonly property bool hasValue: value >= 0
-    readonly property bool hasIcon: icon.length > 0
+    readonly property bool hasIcon: icon.length > 0 || glyph.length > 0
     readonly property var actionList: {
         try { return JSON.parse(actions); } catch (e) { return []; }
     }
@@ -105,7 +106,7 @@ Rectangle {
     }
 
     Image {
-        visible: card.hasIcon
+        visible: card.icon.length > 0
         x: 25
         y: card.contentTop + Math.round((card.rowMin - card.iconBox) / 2)
         width: card.iconBox
@@ -116,6 +117,20 @@ Rectangle {
         fillMode: Image.PreserveAspectFit
         asynchronous: true
         smooth: true
+    }
+
+    Text {
+        visible: card.glyph.length > 0 && card.icon.length === 0
+        x: 25
+        y: card.contentTop + Math.round((card.rowMin - card.iconBox) / 2)
+        width: card.iconBox
+        height: card.iconBox
+        horizontalAlignment: Text.AlignHCenter
+        verticalAlignment: Text.AlignVCenter
+        text: card.glyph
+        font.family: card.fontFamily
+        font.pixelSize: 42
+        color: Theme.foreground
     }
 
     Column {
