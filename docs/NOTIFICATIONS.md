@@ -20,8 +20,8 @@ Quickshell owns the session's `org.freedesktop.Notifications` service through
 ## Existing toggle integrations
 
 - Caffeine is controlled by `~/.config/hypr/scripts/caffeine.sh toggle`.
-  The bar watches `/tmp/caffeine_on` and sends a short notification when the
-  flag changes, including changes made outside the bar.
+  The bar watches `/tmp/caffeine_on` only to update its icon. The existing
+  `caffeine.sh` script owns the toggle notification, avoiding duplicate toasts.
 - The volume module's right-click mute action calls
   `prgnotifier volume toggle`, matching the hardware mute key's OSD path.
 - Airplane mode and touchpad blocking are handled by the user's separate
