@@ -1,46 +1,46 @@
 # Notifications and status toasts
 
-This configuration deliberately delegates desktop notifications to **SwayNC**.
-Quickshell does not instantiate a `NotificationServer`, so it does not compete
-with SwayNC for the session's `org.freedesktop.Notifications` D-Bus name.
+Quickshell owns the session's `org.freedesktop.Notifications` service through
+`NotificationDaemon.qml`. It renders notifications with the shared
+`popups/NotificationCard.qml` component.
 
-## Ownership
+## Behaviour
 
-- **SwayNC** owns desktop notifications and the notification centre.
-- **Quickshell** provides the bar, launcher and control centre.
-- Short status messages from the shell ("Bluetooth enabled", "Power profile
-  updated") are sent through `notify-send`, so SwayNC displays them like any
-  other notification (`Notify.qml`). There is no separate Quickshell OSD.
-- Volume and brightness feedback comes from `scripts/prgnotifier.c`, which also
-  talks to SwayNC.
-- Control Center → Notifications drives SwayNC through `swaync-client`
-  (Do Not Disturb, dismiss all).
+- Normal notifications stay for 5 seconds; low-urgency notifications stay for
+  3 seconds; critical notifications remain until dismissed.
+- Notifications carrying `x-canonical-private-synchronous` replace the
+  existing card with the same key. This is used for OSD and toggle feedback.
+- Notifications carrying a numeric `value` hint (0-100) render a progress bar.
+- Do Not Disturb hides ordinary notifications but leaves OSD and critical
+  notifications visible.
+- Status notifications without an application icon receive a Nerd Font glyph
+  when their title/body identifies airplane mode, caffeine, mute/volume,
+  Caps Lock, or mouse/touchpad state.
 
-Do not enable a second notification server while SwayNC is running. D-Bus
-notification ownership is exclusive; two daemons cannot both own the same
-well-known name.
+## Existing toggle integrations
 
-## Verify SwayNC
+- Caffeine is controlled by `~/.config/hypr/scripts/caffeine.sh toggle`.
+  The bar watches `/tmp/caffeine_on` and sends a short notification when the
+  flag changes, including changes made outside the bar.
+- The volume module's right-click mute action calls
+  `prgnotifier volume toggle`, matching the hardware mute key's OSD path.
+- Airplane mode and touchpad blocking are handled by the user's separate
+  `~/.config/hypr/scripts/sysnotifier.sh` script. Keep its notifications
+  descriptive (for example, titles containing "Airplane mode" or "Touchpad")
+  to select the matching glyph automatically.
 
-Check that the service is running:
+## Test
+
+Send sample notifications:
 
 ```sh
-pgrep -a swaync
+notify-send "Airplane mode" "Enabled"
+notify-send "Caffeine" "Enabled"
+notify-send "Volume" "Muted"
+notify-send "Caps Lock" "On"
+notify-send "Touchpad" "Disabled"
 ```
 
-Send a test notification:
-
-```sh
-notify-send "Notification test" "SwayNC should display this message."
-```
-
-If notifications do not appear, inspect the SwayNC process and its user
-configuration before changing Quickshell. Also check that no other daemon
-(mako, dunst, fnott or a Quickshell notification server) is started alongside
-it.
-
-## Configuration
-
-SwayNC appearance and behaviour are controlled by its own configuration,
-typically under `~/.config/swaync/`. Quickshell's `Theme.qml` palette is a
-separate concern and does not automatically theme SwayNC.
+The daemon is started by `shell.qml`. Do not start SwayNC, mako, dunst, or
+another notification server alongside it: D-Bus notification ownership is
+exclusive.
