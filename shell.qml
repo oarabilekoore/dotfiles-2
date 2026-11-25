@@ -117,7 +117,7 @@ ShellRoot {
     Variants {
         id: desktops
         model: Quickshell.screens
-        Desktop { modelData: modelData }
+        Desktop {}
     }
 
     Variants {
