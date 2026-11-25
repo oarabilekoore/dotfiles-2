@@ -59,10 +59,28 @@ Scope {
     // Status notifications often come from small shell scripts without an app icon,
     // so infer a useful symbolic icon from their title/body as a fallback.
     function statusGlyph(n) {
-        const text = ((n.summary || "") + " " + (n.body || "")).toLowerCase();
+        const summary = (n.summary || "").toLowerCase();
+        const body = (n.body || "").toLowerCase();
+        const text = summary + " " + body;
+
         if (text.includes("airplane") || text.includes("flight mode")) return "󰀝";
         if (text.includes("caffeine") || text.includes("keep awake")) return "󰅶";
-        if (text.includes("mute") || text.includes("volume")) return "";
+
+        // Volume OSD: select the speaker glyph from the actual mute state or
+        // percentage, rather than assigning the mute glyph to every volume toast.
+        if (summary.includes("volume")) {
+            if (body.includes("muted")) return "";
+            const match = body.match(/(\d+)\s*%/);
+            const level = match ? Number(match[1]) : Number(n.value);
+            if (Number.isFinite(level)) {
+                if (level <= 30) return "";
+                if (level <= 70) return "";
+                return "";
+            }
+            return "";
+        }
+
+        if (text.includes("mute")) return "";
         if (text.includes("caps lock") || text.includes("capslock")) return "󰪛";
         if (text.includes("mouse") || text.includes("touchpad") || text.includes("pointer")) return "󰍽";
         return "";
