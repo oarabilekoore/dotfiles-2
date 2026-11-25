@@ -30,6 +30,13 @@ Singleton {
     property bool showClock: true
     property string clockFormat: "weekday"
 
+    // Desktop widgets
+    property bool desktopWidgetsEnabled: true
+    property int desktopClockX: 36
+    property int desktopClockY: 84
+    property int desktopSystemX: 36
+    property int desktopSystemY: 232
+
     // Apps
     property string terminalCmd: "ghostty"
 
@@ -38,6 +45,7 @@ Singleton {
         "barHeight", "barMargin",
         "showWorkspaces", "showMpris", "showDictation", "showCaffeine", "showTray",
         "showNetwork", "showBluetooth", "showBattery", "showClock", "clockFormat",
+        "desktopWidgetsEnabled", "desktopClockX", "desktopClockY", "desktopSystemX", "desktopSystemY",
         "terminalCmd"
     ]
 
