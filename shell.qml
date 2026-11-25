@@ -113,6 +113,13 @@ ShellRoot {
     
     NotificationDaemon {}
 
+    // Desktop layer: widgets sit above the wallpaper and below normal windows.
+    Variants {
+        id: desktops
+        model: Quickshell.screens
+        Desktop { modelData: modelData }
+    }
+
     Variants {
         id: bars
         model: Quickshell.screens
