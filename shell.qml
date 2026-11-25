@@ -110,6 +110,8 @@ ShellRoot {
         function reindex(): void { root.callLauncher("reindex", []); }
         function reloadConfig(): void { root.callLauncher("reloadConfig", []); }
     }
+    
+    NotificationDaemon {}
 
     Variants {
         id: bars
