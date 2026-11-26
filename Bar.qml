@@ -42,9 +42,8 @@ PanelWindow {
         anchors.fill: parent
         z: -2
         radius: Theme.barRadius
-        // Translucent dark tint keeps the bar readable while letting the
-        // desktop show through. Hyprland layer blur can soften the backdrop.
-        color: Theme.alpha(Theme.background, 0.78)
+        // Fully transparent: no tint or fill behind the bar modules.
+        color: "transparent"
         border.width: 1
         border.color: Theme.alpha(Theme.outline_variant, 0.85)
     }
