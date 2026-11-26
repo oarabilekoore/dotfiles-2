@@ -32,97 +32,178 @@ PanelWindow {
     property var trayItem: null
     property var trayAnchor: null
 
+    // Auto-hide keeps a tiny hover target at the top edge so the bar can
+    // always be revealed without reserving the full bar height.
+    property bool barShown: true
+    readonly property int revealHeight: 3
+
+    Timer {
+        id: hideTimer
+        interval: 550
+        repeat: false
+        onTriggered: {
+            if (Config.autoHideBar
+                    && !hoverSensor.hovered
+                    && barWindow.activePopup === "") {
+                barWindow.barShown = false;
+            }
+        }
+    }
+
+    Component.onCompleted: {
+        if (Config.autoHideBar)
+            hideTimer.start();
+    }
+
+    Connections {
+        target: Config
+
+        function onAutoHideBarChanged() {
+            if (!Config.autoHideBar) {
+                hideTimer.stop();
+                barWindow.barShown = true;
+            } else if (!hoverSensor.hovered && barWindow.activePopup === "") {
+                hideTimer.restart();
+            }
+        }
+    }
+
+    onActivePopupChanged: {
+        if (activePopup === "" && Config.autoHideBar && !hoverSensor.hovered)
+            hideTimer.restart();
+        else
+            hideTimer.stop();
+    }
+
+    // Clicks pass through the transparent bar area except where modules
+    // provide their own controls. This area only handles empty-space clicks.
     MouseArea {
         anchors.fill: parent
         z: -1
         onClicked: barWindow.activePopup = ""
     }
 
-    Row {
-        id: leftModules
+    // HoverHandler observes pointer movement without sitting above the
+    // modules or intercepting their hover and click interactions.
+    Item {
+        anchors.top: parent.top
         anchors.left: parent.left
-        anchors.leftMargin: 8
-        anchors.verticalCenter: parent.verticalCenter
-        spacing: 0
-
-        Workspaces { visible: Config.showWorkspaces }
-
-        SystemTrayModule {
-            id: trayMod
-            parentBar: barWindow
-            visible: Config.showTray
-        }
-
-        MprisModule {
-            id: mprisMod
-            parentBar: barWindow
-            visible: Config.showMpris
-        }
-    }
-
-    ClockModule {
-        id: clockMod
-        anchors.centerIn: parent
-        parentBar: barWindow
-        visible: Config.showClock
-    }
-
-    Row {
-        id: rightModules
         anchors.right: parent.right
-        anchors.rightMargin: 2
-        anchors.verticalCenter: parent.verticalCenter
-        spacing: 0
+        height: barWindow.barShown ? parent.height : barWindow.revealHeight
+        z: 10
 
-        BluetoothModule {
-            id: btMod
-            parentBar: barWindow
-            visible: Config.showBluetooth
+        HoverHandler {
+            id: hoverSensor
+
+            onHoveredChanged: {
+                if (hovered) {
+                    hideTimer.stop();
+                    barWindow.barShown = true;
+                } else if (Config.autoHideBar && barWindow.activePopup === "") {
+                    hideTimer.restart();
+                }
+            }
         }
+    }
 
-        CaffeineModule { visible: Config.showCaffeine }
+    Item {
+        id: barContent
+        anchors.fill: parent
+        y: barWindow.barShown ? 0 : -Theme.barHeight + barWindow.revealHeight
 
-        NetworkModule {
-            id: netMod
-            parentBar: barWindow
-            visible: Config.showNetwork
-        }
-
-        // Keep the subtle separators between the right-side status groups.
-        Item {
-            width: 10
-            height: Theme.barHeight
-            Rectangle {
-                anchors.centerIn: parent
-                width: 1
-                height: 14
-                radius: 1
-                color: Theme.outline
+        Behavior on y {
+            NumberAnimation {
+                duration: 220
+                easing.type: Easing.OutCubic
             }
         }
 
-        VolumeModule {
-            id: volMod
-            parentBar: barWindow
-        }
+        Row {
+            id: leftModules
+            anchors.left: parent.left
+            anchors.leftMargin: 8
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 0
 
-        Item {
-            width: Config.showBattery ? 10 : 0
-            height: Theme.barHeight
-            visible: Config.showBattery
-            Rectangle {
-                anchors.centerIn: parent
-                width: 1
-                height: 14
-                radius: 1
-                color: Theme.outline
+            Workspaces { visible: Config.showWorkspaces }
+
+            SystemTrayModule {
+                id: trayMod
+                parentBar: barWindow
+                visible: Config.showTray
+            }
+
+            MprisModule {
+                id: mprisMod
+                parentBar: barWindow
+                visible: Config.showMpris
             }
         }
 
-        BatteryModule {
-            id: batMod
+        ClockModule {
+            id: clockMod
+            anchors.centerIn: parent
             parentBar: barWindow
-            visible: Config.showBattery
+            visible: Config.showClock
+        }
+
+        Row {
+            id: rightModules
+            anchors.right: parent.right
+            anchors.rightMargin: 2
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 0
+
+            BluetoothModule {
+                id: btMod
+                parentBar: barWindow
+                visible: Config.showBluetooth
+            }
+
+            CaffeineModule { visible: Config.showCaffeine }
+
+            NetworkModule {
+                id: netMod
+                parentBar: barWindow
+                visible: Config.showNetwork
+            }
+
+            // Keep the subtle separators between the right-side status groups.
+            Item {
+                width: 10
+                height: Theme.barHeight
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 1
+                    height: 14
+                    radius: 1
+                    color: Theme.outline
+                }
+            }
+
+            VolumeModule {
+                id: volMod
+                parentBar: barWindow
+            }
+
+            Item {
+                width: Config.showBattery ? 10 : 0
+                height: Theme.barHeight
+                visible: Config.showBattery
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 1
+                    height: 14
+                    radius: 1
+                    color: Theme.outline
+                }
+            }
+
+            BatteryModule {
+                id: batMod
+                parentBar: barWindow
+                visible: Config.showBattery
+            }
         }
     }
 

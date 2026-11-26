@@ -75,6 +75,8 @@ ShellRoot {
     IpcHandler {
         target: "bar"
         function toggle() { root.barVisible = !root.barVisible; }
+        function toggleAutoHide() { Config.set("autoHideBar", !Config.autoHideBar); }
+        function setAutoHide(enabled: bool) { Config.set("autoHideBar", enabled); }
     }
 
     IpcHandler {
@@ -110,7 +112,7 @@ ShellRoot {
         function reindex(): void { root.callLauncher("reindex", []); }
         function reloadConfig(): void { root.callLauncher("reloadConfig", []); }
     }
-    
+
     NotificationDaemon {}
 
     // Desktop layer: widgets sit above the wallpaper and below normal windows.

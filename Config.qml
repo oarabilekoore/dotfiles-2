@@ -19,6 +19,7 @@ Singleton {
     // Bar
     property int barHeight: 22
     property int barMargin: 0
+    property bool autoHideBar: false
     property bool showWorkspaces: true
     property bool showMpris: true
     property bool showDictation: true
@@ -42,7 +43,7 @@ Singleton {
 
     readonly property var persistedKeys: [
         "fontFamily", "fontScale", "cornerRadius",
-        "barHeight", "barMargin",
+        "barHeight", "barMargin", "autoHideBar",
         "showWorkspaces", "showMpris", "showDictation", "showCaffeine", "showTray",
         "showNetwork", "showBluetooth", "showBattery", "showClock", "clockFormat",
         "desktopWidgetsEnabled", "desktopClockX", "desktopClockY", "desktopSystemX", "desktopSystemY",

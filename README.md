@@ -33,7 +33,16 @@ quickshell ipc call launcher toggle all
 quickshell ipc call launcher open files
 quickshell ipc call launcher reindex
 quickshell ipc call launcher reloadConfig
+quickshell ipc call bar toggleAutoHide
+quickshell ipc call bar setAutoHide true
 ```
+
+The bar's hover auto-hide is a persisted preference (`autoHideBar`) in
+`~/.config/quickshell/settings.json`. It is disabled by default. Enable it
+with `quickshell ipc call bar setAutoHide true`, or toggle it with
+`quickshell ipc call bar toggleAutoHide`. When enabled, the bar slides upward
+after the pointer leaves and reveals itself when the pointer reaches the thin
+3-pixel strip at the top edge. Open bar popups keep the bar revealed.
 
 ## Hydrogen integration
 
