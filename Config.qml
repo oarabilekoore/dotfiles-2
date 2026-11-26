@@ -17,7 +17,7 @@ Singleton {
     property int cornerRadius: 0
 
     // Bar
-    property int barHeight: 32
+    property int barHeight: 22
     property int barMargin: 0
     property bool showWorkspaces: true
     property bool showMpris: true

@@ -70,7 +70,7 @@ PanelWindow {
     Row {
         id: rightModules
         anchors.right: parent.right
-        anchors.rightMargin: 6
+        anchors.rightMargin: 2
         anchors.verticalCenter: parent.verticalCenter
         spacing: 0
 

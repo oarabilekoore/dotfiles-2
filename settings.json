@@ -14,5 +14,10 @@
   "showBattery": true,
   "showClock": true,
   "clockFormat": "time",
+  "desktopWidgetsEnabled": false,
+  "desktopClockX": 864,
+  "desktopClockY": 182,
+  "desktopSystemX": 191,
+  "desktopSystemY": 317,
   "terminalCmd": "ghostty"
 }
