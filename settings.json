@@ -4,6 +4,7 @@
   "cornerRadius": 0,
   "barHeight": 32,
   "barMargin": 0,
+  "autoHideBar": true,
   "showWorkspaces": true,
   "showMpris": true,
   "showDictation": true,

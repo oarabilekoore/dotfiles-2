@@ -23,7 +23,7 @@ PanelWindow {
     }
 
     implicitHeight: Theme.barHeight
-    color: "transparent"
+    color: Theme.surface 
 
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "quickshell"
@@ -121,7 +121,7 @@ PanelWindow {
         Row {
             id: leftModules
             anchors.left: parent.left
-            anchors.leftMargin: 8
+            anchors.leftMargin: 0
             anchors.verticalCenter: parent.verticalCenter
             spacing: 0
 
