@@ -43,7 +43,7 @@ PanelWindow {
         repeat: false
         onTriggered: {
             if (Config.autoHideBar
-                    && !hoverSensor.containsMouse
+                    && !hoverSensor.hovered
                     && barWindow.activePopup === "") {
                 barWindow.barShown = false;
             }
@@ -62,14 +62,14 @@ PanelWindow {
             if (!Config.autoHideBar) {
                 hideTimer.stop();
                 barWindow.barShown = true;
-            } else if (!hoverSensor.containsMouse && barWindow.activePopup === "") {
+            } else if (!hoverSensor.hovered && barWindow.activePopup === "") {
                 hideTimer.restart();
             }
         }
     }
 
     onActivePopupChanged: {
-        if (activePopup === "" && Config.autoHideBar && !hoverSensor.containsMouse)
+        if (activePopup === "" && Config.autoHideBar && !hoverSensor.hovered)
             hideTimer.restart();
         else
             hideTimer.stop();
@@ -83,26 +83,26 @@ PanelWindow {
         onClicked: barWindow.activePopup = ""
     }
 
-    // Hover-only sensor. No mouse buttons are accepted, so module clicks
-    // continue to reach their own controls.
-    MouseArea {
-        id: hoverSensor
+    // HoverHandler observes pointer movement without sitting above the
+    // modules or intercepting their hover and click interactions.
+    Item {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
         height: barWindow.barShown ? parent.height : barWindow.revealHeight
         z: 10
-        hoverEnabled: true
-        acceptedButtons: Qt.NoButton
 
-        onEntered: {
-            hideTimer.stop();
-            barWindow.barShown = true;
-        }
+        HoverHandler {
+            id: hoverSensor
 
-        onExited: {
-            if (Config.autoHideBar && barWindow.activePopup === "")
-                hideTimer.restart();
+            onHoveredChanged: {
+                if (hovered) {
+                    hideTimer.stop();
+                    barWindow.barShown = true;
+                } else if (Config.autoHideBar && barWindow.activePopup === "") {
+                    hideTimer.restart();
+                }
+            }
         }
     }
 
