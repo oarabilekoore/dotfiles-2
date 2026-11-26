@@ -38,16 +38,6 @@ PanelWindow {
         onClicked: barWindow.activePopup = ""
     }
 
-    Rectangle {
-        anchors.fill: parent
-        z: -2
-        radius: Theme.barRadius
-        // Fully transparent: no tint or fill behind the bar modules.
-        color: "transparent"
-        border.width: 1
-        border.color: Theme.alpha(Theme.outline_variant, 0.85)
-    }
-
     Row {
         id: leftModules
         anchors.left: parent.left
